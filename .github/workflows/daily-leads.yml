@@ -1,0 +1,44 @@
+# Runs the agent every morning at 8:00 AM IST on GitHub's free runners.
+# No secrets to configure - the default data source needs no API key.
+#
+# Setup:
+#   1. Push this folder to a GitHub repo (private is fine).
+#   2. Actions tab -> enable workflows.
+#   3. Done. Each run attaches the CSV + HTML report as a downloadable
+#      artifact. Free tier covers this easily (~2 min/day of 2,000 min/mo).
+name: Daily US lead run
+
+on:
+  schedule:
+    - cron: "30 2 * * *"      # 02:30 UTC = 08:00 IST
+  workflow_dispatch:           # lets you trigger a run by hand
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      # Keep the ledger between runs so you never see the same lead twice.
+      - name: Restore lead ledger
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: lead-ledger-${{ github.run_id }}
+          restore-keys: lead-ledger-
+
+      - name: Hunt
+        run: python3 run.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: leads-${{ github.run_number }}
+          path: out/
+          retention-days: 30

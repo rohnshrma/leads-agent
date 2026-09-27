@@ -1,0 +1,16 @@
+# Your lead ledger - local state, and it holds place IDs you've seen.
+# The GitHub Actions cache carries it between runs instead.
+data/*.db
+data/*.db-journal
+
+# Daily reports. Kept out of git on purpose: they contain US business
+# contact data, and the workflow already uploads them as run artifacts.
+out/*.csv
+out/*.html
+out/*.json
+
+logs/
+__pycache__/
+*.pyc
+.env
+.DS_Store
