@@ -1,0 +1,14 @@
+{
+  "name": "webigeeks-crm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lean two-pipeline CRM for WebiGeeks (admissions) and WebiGeeks Digital (agency outreach)",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": { "node": ">=22.13" },
+  "dependencies": { "express": "^4.21.2" }
+}

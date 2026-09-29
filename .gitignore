@@ -14,3 +14,8 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+
+# CRM: local lead database (personal contact data) and dependencies
+crm/data/*.db
+crm/data/*.db-*
+crm/node_modules/
