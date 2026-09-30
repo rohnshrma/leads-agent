@@ -22,6 +22,9 @@ def build_mockups(rows: list[dict], out_dir, owner: dict | None = None, gallery:
         from pathlib import Path
         d = Path(out_dir)
         (d / "robots.txt").write_text("User-agent: *\nDisallow: /\n", encoding="utf-8")
+        (d / "vercel.json").write_text(
+            '{"headers":[{"source":"/(.*)","headers":[{"key":"X-Robots-Tag","value":"noindex, nofollow, noarchive"}]}]}',
+            encoding="utf-8")
         (d / "index.html").write_text(
             "<!doctype html><meta charset=utf-8><meta name=robots content='noindex,nofollow'>"
             "<title>Design previews</title><p style='font:16px system-ui;padding:40px'>"

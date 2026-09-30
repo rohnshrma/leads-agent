@@ -17,7 +17,7 @@ jobs:
   hunt:
     runs-on: ubuntu-latest
     env:
-      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,14 +47,14 @@ jobs:
       - name: Hunt
         run: python3 run.py
 
-      # Publishes out/mockups to demo.webigeeksdigital.com (Cloudflare Pages,
-      # free). Skipped until you add the two secrets - see crm/README or chat.
+      # Publishes out/mockups to demo.webigeeksdigital.com (Vercel project
+      # "webigeeks-demo"). Skipped until the three secrets below exist.
       - name: Publish mockups
-        if: ${{ env.CF_TOKEN != '' }}
+        if: ${{ env.VERCEL_TOKEN != '' }}
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@3 pages deploy out/mockups --project-name=webigeeks-demo --branch=main --commit-dirty=true
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx --yes vercel@latest deploy out/mockups --prod --yes --token="$VERCEL_TOKEN"
 
       - uses: actions/upload-artifact@v4
         with:
