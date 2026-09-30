@@ -195,12 +195,12 @@ outreach:
 # ---- WEBSITE MOCKUPS ---------------------------------------
 # One free sample homepage per lead in the six niches (dental, driving
 # school, auto repair, gym, law, accounting). Static files in out/mockups.
-# base_url is where you publish that folder (free: Cloudflare Pages or a
-# public repo's GitHub Pages). Leave empty until it is set up.
+# base_url is where that folder is published (Cloudflare Pages, custom
+# domain). Each page lives at base_url/<business-name>-<random>/.
 mockups:
   enabled: true
   dir: "mockups"
-  base_url: ""
+  base_url: "https://demo.webigeeksdigital.com"
 
 # ---- OUTPUT -------------------------------------------------
 output:

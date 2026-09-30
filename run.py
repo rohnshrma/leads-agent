@@ -172,7 +172,7 @@ def main() -> int:
         base = (mk.get("base_url") or "").rstrip("/")
         owner = {"company": cfg.get("outreach", {}).get("your_company", ""),
                  "email": cfg.get("outreach", {}).get("your_email", "")}
-        built = build_mockups(rows, mdir, owner=owner)
+        built = build_mockups(rows, mdir, owner=owner, gallery=False)
         by_id = {(r["source_id"]): m for r, m in built}
         for r in rows:
             m = by_id.get(r["source_id"])

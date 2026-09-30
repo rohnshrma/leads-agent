@@ -4,7 +4,7 @@ from .niches import NICHES, niche_key_for
 from .render import render_mockup, write_gallery
 
 
-def build_mockups(rows: list[dict], out_dir, owner: dict | None = None) -> list[tuple[dict, dict]]:
+def build_mockups(rows: list[dict], out_dir, owner: dict | None = None, gallery: bool = True) -> list[tuple[dict, dict]]:
     """Render a mockup for every row that fits a niche; returns (row, result) pairs."""
     built = []
     for row in rows:
@@ -15,8 +15,17 @@ def build_mockups(rows: list[dict], out_dir, owner: dict | None = None) -> list[
             continue
         if res:
             built.append((row, res))
-    if built:
+    if built and gallery:
         write_gallery([m for _, m in built], out_dir)
+    elif built:
+        # Public hosting: no list of pages, and ask crawlers to stay away.
+        from pathlib import Path
+        d = Path(out_dir)
+        (d / "robots.txt").write_text("User-agent: *\nDisallow: /\n", encoding="utf-8")
+        (d / "index.html").write_text(
+            "<!doctype html><meta charset=utf-8><meta name=robots content='noindex,nofollow'>"
+            "<title>Design previews</title><p style='font:16px system-ui;padding:40px'>"
+            "Private design previews.</p>", encoding="utf-8")
     return built
 
 
