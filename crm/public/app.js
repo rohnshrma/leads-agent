@@ -85,11 +85,15 @@ function fill(text, l) {
   return String(text || '')
     .replaceAll('{{name}}', firstName(l))
     .replaceAll('{{course}}', l.courseInterest || 'our course')
-    .replaceAll('{{business}}', l.business || l.name);
+    .replaceAll('{{business}}', l.business || l.name)
+    .replaceAll('{{mockup}}', l.mockupUrl || '[design preview link]');
 }
 function templateFor(l, channel, id) {
   const list = S.cfg.templates.filter((t) => t.pipeline === l.pipeline && t.channel === channel);
-  return list.find((t) => t.id === id) || list[0];
+  const pick = list.find((t) => t.id === id);
+  if (pick) return pick;
+  // a lead with a design preview link gets the email that carries it
+  return (l.mockupUrl && list.find((t) => t.body.includes('{{mockup}}'))) || list.find((t) => !t.body.includes('{{mockup}}')) || list[0];
 }
 function links(l, tplId) {
   const out = {};
@@ -280,7 +284,7 @@ function viewImport() {
       <div class="card panel">
         <h3>What it understands</h3>
         <p><b>Leads-agent files</b> (<code>out/leads-YYYY-MM-DD.csv</code>) are detected automatically. They go to the Agency pipeline with city, state, niche, notes and the opportunity score filled in.</p>
-        <p><b>Plain CSVs</b> need a header row. Recognised columns: <code>name</code>, <code>phone</code>, <code>whatsapp</code>, <code>email</code>, <code>city</code>, <code>state</code>, <code>country</code>, <code>source</code>, <code>course</code>, <code>business</code>, <code>website</code>, <code>niche</code>, <code>notes</code>.</p>
+        <p><b>Plain CSVs</b> need a header row. Recognised columns: <code>name</code>, <code>phone</code>, <code>whatsapp</code>, <code>email</code>, <code>city</code>, <code>state</code>, <code>country</code>, <code>source</code>, <code>course</code>, <code>business</code>, <code>website</code>, <code>mockup_url</code>, <code>niche</code>, <code>notes</code>.</p>
         <p>Duplicates (same phone, email or agent ID) are skipped, so re-importing a file is safe. Use <b>Preview</b> first to see what would happen.</p>
         <p class="muted small">Every imported lead gets its first next action automatically, so they all appear in Today.</p>
       </div></div>`;
@@ -339,6 +343,7 @@ function detailsForm(l) {
     <div class="row">${f('name', 'Name', l.name)}${f('business', 'Business', l.business)}</div>
     <div class="row">${f('phone', 'Phone', l.phone, 'tel')}${f('whatsapp', 'WhatsApp (if different)', l.whatsapp, 'tel')}</div>
     <div class="row">${f('email', 'Email', l.email, 'email')}${f('website', 'Website', l.website)}</div>
+    ${l.pipeline === 'agency' ? f('mockupUrl', 'Design preview link', l.mockupUrl) : ''}
     <div class="row">${f('city', 'City', l.city)}${f('state', 'State', l.state)}${f('country', 'Country', l.country)}</div>
     <div class="row">${adm
     ? f('courseInterest', 'Course interest', l.courseInterest) + f('feeQuoted', 'Fee quoted (₹)', l.feeQuoted, 'number') + f('feeFinal', 'Fee agreed (₹)', l.feeFinal, 'number')
@@ -395,9 +400,18 @@ function renderDrawer({ lead: l, activities }, logType) {
           ${l.website ? `<a class="btn" target="_blank" rel="noopener" href="${esc(/^https?:/.test(l.website) ? l.website : 'https://' + l.website)}">${icon('linkedin')}Website</a>` : ''}
         </div>
         ${tpls.length ? `<div class="field" style="margin:10px 0 0"><label for="tpl">Message template</label>
-          <select id="tpl" data-action="tpl" data-id="${l.id}">${tpls.map((t) => `<option value="${t.id}">${label(t.channel)}: ${esc(t.name)}</option>`).join('')}</select></div>` : ''}
+          <select id="tpl" data-action="tpl" data-id="${l.id}">${tpls.map((t) => `<option value="${t.id}" ${l.mockupUrl && t.body.includes('{{mockup}}') ? 'selected' : ''}>${label(t.channel)}: ${esc(t.name)}</option>`).join('')}</select></div>` : ''}
         ${dnc ? '<p class="err">Outbound contact is blocked for this lead.</p>' : ''}
       </div>
+      ${l.pipeline === 'agency' && l.mockupUrl ? `<div class="block"><h3>Design preview</h3>
+        <p class="small" style="margin:0 0 8px;word-break:break-all"><a target="_blank" rel="noopener" href="${esc(l.mockupUrl)}">${esc(l.mockupUrl)}</a></p>
+        <div class="chips">
+          <a class="btn" target="_blank" rel="noopener" href="${esc(l.mockupUrl)}">Open preview</a>
+          <button class="btn" data-action="copy-mockup" data-url="${esc(l.mockupUrl)}">Copy link</button>
+          ${l.mockupSentAt ? `<span class="chip green">Sent ${fmtAbs(l.mockupSentAt)}</span>` : (dnc ? '' : `<button class="btn" data-action="mockup-sent" data-id="${l.id}">Log as sent</button>`)}
+        </div>
+        ${l.mockupSentAt ? '' : '<p class="muted small" style="margin:8px 0 0">Not sent yet. Use the email button above; the Email with design preview template includes this link.</p>'}
+      </div>` : ''}
       ${open ? `<div class="block"><h3>Next action</h3>
         ${l.nextActionAt ? `<div class="next" style="margin:0 0 8px">${icon(l.nextActionType || 'call')}<b>${esc(l.nextActionNote || label(l.nextActionType))}</b>
           <span class="${l.overdue ? 'due-over' : ''}">${l.overdue ? 'Overdue · ' : ''}${rel(l.nextActionAt)}</span><span class="muted small">${fmtAbs(l.nextActionAt)}</span></div>` : '<p class="err">No next action set.</p>'}
@@ -536,6 +550,16 @@ const ACTIONS = {
   'nl-force': () => saveNewLead(true),
   'open-dup'(el) { closeModal(); openLead(Number(el.dataset.id)); },
   open(el) { openLead(Number(el.dataset.id), { log: el.dataset.log }); },
+  async 'copy-mockup'(el) {
+    try { await navigator.clipboard.writeText(el.dataset.url); toast('Link copied'); }
+    catch { toast('Could not copy - select the link and copy it', true); }
+  },
+  'mockup-sent'(el) {
+    // Pre-fill the log form as an email that carries the link; saving it stamps the sent date.
+    el.closest('.drawer, body').querySelector('#log-types [data-type="email"]')?.click();
+    const s = $('#lg-summary');
+    if (s) { s.value = `Sent design preview: ${$$('[data-action="copy-mockup"]')[0]?.dataset.url || ''}`; s.scrollIntoView({ block: 'center' }); s.focus(); }
+  },
   'close-drawer': closeDrawer,
   'close-modal': closeModal,
   'cancel-move': () => { closeModal(); refresh(); },
@@ -575,7 +599,7 @@ const ACTIONS = {
     const l = (await api('GET', `/leads/${el.dataset.id}`)).lead;
     const body = {
       name: v('name'), business: v('business'), phone: v('phone'), whatsapp: v('whatsapp'), email: v('email'),
-      website: v('website'), city: v('city'), state: v('state'), country: v('country') || l.country, source: v('source'), notes: v('notes'),
+      website: v('website'), ...(l.pipeline === 'agency' ? { mockupUrl: v('mockupUrl') } : {}), city: v('city'), state: v('state'), country: v('country') || l.country, source: v('source'), notes: v('notes'),
       ...(l.pipeline === 'admission'
         ? { courseInterest: v('courseInterest'), feeQuoted: num('feeQuoted'), feeFinal: num('feeFinal') }
         : { niche: v('niche'), dealValue: num('dealValue') }),

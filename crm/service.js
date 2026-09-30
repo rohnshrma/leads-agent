@@ -17,7 +17,7 @@ const isIso = (s) => typeof s === 'string' && !Number.isNaN(Date.parse(s));
 const EDITABLE = [
   'name', 'business', 'phone', 'whatsapp', 'email', 'city', 'state', 'country', 'timezone',
   'source', 'sourceDetail', 'courseInterest', 'feeQuoted', 'feeFinal', 'dealValue',
-  'website', 'niche', 'notes', 'temperature',
+  'website', 'mockupUrl', 'niche', 'notes', 'temperature',
 ];
 const INT_FIELDS = new Set(['feeQuoted', 'feeFinal', 'dealValue']);
 
@@ -141,6 +141,7 @@ export function createService(db) {
     if (out.phone) out.phone = normalizePhone(out.phone, country);
     if (out.whatsapp) out.whatsapp = normalizePhone(out.whatsapp, country);
     if (out.email) out.email = out.email.toLowerCase();
+    if (out.mockupUrl && !/^https?:\/\/\S+$/i.test(out.mockupUrl)) throw new HttpError(400, 'Design preview link must start with http:// or https://');
     if (out.state && country === 'US') out.state = out.state.toUpperCase();
     if (out.source && !SOURCES.includes(out.source)) throw new HttpError(400, `Unknown source "${out.source}"`);
     return out;
@@ -284,6 +285,9 @@ export function createService(db) {
     addActivity(id, { type, direction, outcome: input.outcome, summary: input.summary, at });
 
     const sets = { updatedAt: nowIso() };
+    // Sending the design preview link (email, WhatsApp, SMS, LinkedIn or a demo) records when it went out.
+    if (isTouch && direction === 'out' && lead.mockupUrl && !lead.mockupSentAt
+        && String(input.summary || '').includes(lead.mockupUrl)) sets.mockupSentAt = at;
     if (isTouch) {
       sets.lastContactAt = at;
       if (!lead.firstContactAt) sets.firstContactAt = at;
@@ -457,6 +461,7 @@ export function createService(db) {
     source: ['source', 'lead source'],
     courseInterest: ['course', 'course interest', 'course_interest', 'interested in'],
     website: ['website', 'url', 'site'],
+    mockupUrl: ['mockup_url', 'mockup', 'preview link', 'design preview'],
     niche: ['niche', 'category', 'industry'],
     notes: ['notes', 'note', 'remarks', 'comment', 'comments'],
     pipeline: ['pipeline'],
@@ -482,7 +487,7 @@ export function createService(db) {
     ].filter(Boolean).join('\n');
     return {
       pipeline: 'agency', country: 'US', name: r.name, business: r.name,
-      phone: r.phone, email: r.email, website: r.website, city, state,
+      phone: r.phone, email: r.email, website: r.website, mockupUrl: r.mockup_url || null, city, state,
       niche: r.niche_query || r.category, source: 'leads_agent',
       sourceDetail: r.city_query, externalId: r.source_id, notes,
       agentScore: Number(r.opportunity_score) || 0,

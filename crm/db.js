@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS leads (
   fee_final         INTEGER,
   deal_value        INTEGER,
   website           TEXT,
+  mockup_url        TEXT,                            -- free design preview link (demo.webigeeksdigital.com/...)
+  mockup_sent_at    TEXT,
   niche             TEXT,
   score             INTEGER DEFAULT 0,
   agent_score       INTEGER,                         -- opportunity score from the leads agent
@@ -81,5 +83,10 @@ export function openDb(file = process.env.CRM_DB || path.join(here, 'data', 'crm
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  // Databases created before the design-preview feature need the new columns.
+  const have = new Set(db.prepare('PRAGMA table_info(leads)').all().map((c) => c.name));
+  for (const col of ['mockup_url', 'mockup_sent_at']) {
+    if (!have.has(col)) db.exec(`ALTER TABLE leads ADD COLUMN ${col} TEXT`);
+  }
   return db;
 }

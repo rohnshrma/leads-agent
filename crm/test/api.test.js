@@ -211,3 +211,31 @@ test('password protection when configured', async () => {
   assert.equal((await fetch(url, { headers: { authorization: good } })).status, 200);
   s.close();
 });
+
+test('design preview link: imported from the agent CSV, validated, stamped as sent when logged', async () => {
+  const url = 'https://demo.webigeeksdigital.com/acme-dental-abc123/';
+  const csv = 'source,source_id,name,category,address,city_query,niche_query,phone,website,email,opportunity_score,reasons,lead_type,maps_url,mockup_path,mockup_url\n'
+    + `osm,node/777,Acme Dental,dentist,"1 Main St, Omaha, NE 68102, USA",Omaha,dental clinic,(402) 555-0100,,hi@acme.test,70,No website,NO WEBSITE,,x,${url}\n`;
+  const imp = await call('POST', '/import', csv);
+  assert.equal(imp.json.created, 1);
+  const list = await call('GET', '/leads?pipeline=agency');
+  const lead = (list.json.leads || list.json).find((l) => l.name === 'Acme Dental');
+  assert.equal(lead.mockupUrl, url);
+  assert.equal(lead.mockupSentAt, null);
+
+  const bad = await call('PATCH', `/leads/${lead.id}`, { mockupUrl: 'javascript:alert(1)' });
+  assert.equal(bad.status, 400);
+
+  // a note that mentions the link is not a send
+  await call('POST', `/leads/${lead.id}/activities`, { type: 'note', summary: `Prepared ${url}` });
+  assert.equal((await call('GET', `/leads/${lead.id}`)).json.lead.mockupSentAt, null);
+
+  const sent = await call('POST', `/leads/${lead.id}/activities`, {
+    type: 'email', summary: `Sent design preview: ${url}`,
+    next: { type: 'call', at: inDays(3), note: 'Ask what they thought of the preview' },
+  });
+  assert.equal(sent.status, 201);
+  const after = (await call('GET', `/leads/${lead.id}`)).json.lead;
+  assert.ok(after.mockupSentAt);
+  assert.equal(after.mockupUrl, url);
+});
