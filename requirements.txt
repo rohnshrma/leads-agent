@@ -1,4 +1,5 @@
 requests>=2.31
 PyYAML>=6.0
+Jinja2>=3.1
 # Only needed for source: "overture". Harmless to install either way.
 duckdb>=1.0

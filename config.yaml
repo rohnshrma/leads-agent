@@ -192,6 +192,16 @@ outreach:
   calendar_link: ""
   best_call_windows_local: ["09:00-11:00", "14:00-16:00"]
 
+# ---- WEBSITE MOCKUPS ---------------------------------------
+# One free sample homepage per lead in the six niches (dental, driving
+# school, auto repair, gym, law, accounting). Static files in out/mockups.
+# base_url is where you publish that folder (free: Cloudflare Pages or a
+# public repo's GitHub Pages). Leave empty until it is set up.
+mockups:
+  enabled: true
+  dir: "mockups"
+  base_url: ""
+
 # ---- OUTPUT -------------------------------------------------
 output:
   dir: "out"

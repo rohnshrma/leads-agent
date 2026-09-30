@@ -164,9 +164,24 @@ def main() -> int:
     meta = dict(date=stamp, queries=queries_made, found=len(found),
                 fresh=len(fresh), reported=len(reported), source=src_name)
 
+    rows = [b.as_row() for b in reported]
+    mk = cfg.get("mockups", {}) or {}
+    if mk.get("enabled") and rows:
+        from leadagent.mockups import build_mockups
+        mdir = outdir / (mk.get("dir") or "mockups")
+        base = (mk.get("base_url") or "").rstrip("/")
+        owner = {"company": cfg.get("outreach", {}).get("your_company", ""),
+                 "email": cfg.get("outreach", {}).get("your_email", "")}
+        built = build_mockups(rows, mdir, owner=owner)
+        by_id = {(r["source_id"]): m for r, m in built}
+        for r in rows:
+            m = by_id.get(r["source_id"])
+            r["mockup_path"] = m["path"] if m else ""
+            r["mockup_url"] = f"{base}/{m['slug']}/" if (m and base) else ""
+        print(f"mockups -> {mdir} ({len(built)} built)")
     if cfg.get("output", {}).get("write_csv", True):
         p = outdir / f"leads-{stamp}.csv"
-        report.write_csv([b.as_row() for b in reported], p)
+        report.write_csv(rows, p)
         print(f"CSV  -> {p}")
     if cfg.get("output", {}).get("write_html", True):
         p = outdir / f"leads-{stamp}.html"

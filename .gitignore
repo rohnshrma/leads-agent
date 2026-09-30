@@ -19,3 +19,4 @@ __pycache__/
 crm/data/*.db
 crm/data/*.db-*
 crm/node_modules/
+out/mockups/
