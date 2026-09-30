@@ -1,0 +1,222 @@
+{# Law firm: "the quiet study" - parchment paper, thin brass rules, monogram seal + fine-line colonnade. #}
+{% extends 'base.html.j2' %}
+{% block css %}
+.paper{background:
+  radial-gradient(1200px 500px at 85% -10%,rgba(176,141,87,.10),transparent 60%),
+  repeating-linear-gradient(115deg,rgba(0,0,0,.012) 0 2px,transparent 2px 7px),var(--bg)}
+h1,h2,h3{font-weight:600}
+.rule{height:1px;background:var(--line);border:0;margin:0}
+.orn{display:flex;align-items:center;gap:12px;color:var(--accent);margin-bottom:14px}
+.orn::before{content:"";width:34px;height:1px;background:currentColor}
+.orn span{font:700 .74rem/1 var(--font-b);letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.sec-head h2{font-weight:600}
+
+/* header */
+.top{position:sticky;top:0;z-index:40;background:var(--surface);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:22px;min-height:72px}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;min-width:0}
+.seal{flex:none;width:44px;height:44px;border-radius:50%;border:1.5px solid var(--accent);display:grid;place-items:center;background:var(--primary);color:var(--on-primary);box-shadow:0 0 0 3px var(--surface),0 0 0 4px var(--line);font:600 .95rem/1 var(--font-h);letter-spacing:.04em}
+.brand .t{font:600 1.08rem/1.15 var(--font-h);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top nav{margin-left:auto;display:flex;gap:24px;font:600 .92rem var(--font-b)}
+.top nav a{text-decoration:none;color:var(--muted);padding:12px 0}
+.top nav a:hover{color:var(--ink)}
+.tel{display:inline-flex;align-items:center;gap:8px;font-weight:700;text-decoration:none;white-space:nowrap;min-height:44px}
+.top .btn{padding:12px 20px;font-size:.92rem;white-space:nowrap;border-radius:4px}
+.btn{border-radius:4px}
+@media (max-width:980px){.top nav{display:none}.top .tel{margin-left:auto}}
+@media (max-width:720px){.top .tel,.top .btn{display:none}.top .wrap{min-height:64px}}
+
+/* hero */
+.hero{position:relative;overflow:hidden;padding:84px 0 0}
+.hero .hgrid{position:relative;display:grid;grid-template-columns:1.25fr .75fr;gap:30px;align-items:center;padding-bottom:40px}
+.colo{display:block;width:100%;height:auto;max-height:70px;margin-top:8px}
+.hero h1{font-size:clamp(2.3rem,5.4vw,4rem);letter-spacing:-.01em;line-height:1.08;max-width:15ch}
+.hero .sub{font-size:1.2rem;color:var(--muted);margin:22px 0 30px;max-width:40ch}
+.ctas{display:flex;flex-wrap:wrap;gap:12px}
+.btn-line{background:transparent;color:var(--ink);border-color:var(--ink)}
+.watermark{position:relative;justify-self:center;width:min(100%,340px);aspect-ratio:1;display:grid;place-items:center}
+.watermark svg{position:absolute;inset:0;width:100%;height:100%}
+.watermark b{position:relative;font:600 clamp(4rem,9vw,6.4rem)/1 var(--font-h);color:var(--primary);letter-spacing:.02em}
+.trust{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface)}
+.trust ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr)}
+.trust li{padding:20px 22px;text-align:center;font:600 .95rem var(--font-b);border-left:1px solid var(--line);display:flex;justify-content:center;gap:10px;align-items:center}
+.trust li:first-child{border-left:0}
+.trust .ic{color:var(--accent)}
+@media (max-width:860px){.hero{padding-top:44px}.hero .hgrid{grid-template-columns:1fr;padding-bottom:24px}.watermark{position:absolute;right:-70px;top:-20px;width:260px;opacity:.09;z-index:0}.hero .hgrid>div:first-child{position:relative;z-index:1}
+ .trust ul{grid-template-columns:1fr}.trust li{border-left:0;border-top:1px solid var(--line);justify-content:flex-start;padding:14px 4px}.trust li:first-child{border-top:0}}
+
+/* practice areas */
+.areas{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;column-gap:56px;counter-reset:a}
+.areas li{display:grid;grid-template-columns:38px 1fr;gap:4px 8px;padding:22px 0;border-top:1px solid var(--line);counter-increment:a}
+.areas li::before{content:counter(a,decimal-leading-zero);font:600 .95rem/1.7 var(--font-h);color:var(--accent);grid-row:span 2}
+.areas h3{font-size:1.25rem}
+.areas p{color:var(--muted);font-size:.98rem}
+.areas li:nth-last-child(-n+2){border-bottom:1px solid var(--line)}
+.note-line{margin-top:26px;color:var(--muted)}
+@media (max-width:720px){.areas{grid-template-columns:1fr}.areas li:nth-last-child(2){border-bottom:0}}
+
+/* timeline */
+.tl-wrap{background:var(--primary);color:var(--on-primary)}
+.tl-wrap .sec-head p,.tl-wrap .orn span{color:inherit;opacity:.8}
+.tl{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+.tl li{position:relative;padding:34px 30px 0 0;border-top:1px solid rgba(255,255,255,.35)}
+.tl li::before{content:"";position:absolute;top:-5px;left:0;width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.tl .num{font:500 2.6rem/1 var(--font-h);color:var(--accent);display:block;margin-bottom:12px}
+.tl h3{font-size:1.25rem;margin-bottom:8px}
+.tl p{opacity:.85}
+.tl .ph{color:inherit}
+@media (max-width:720px){.tl{grid-template-columns:1fr}.tl li{border-top:0;border-left:1px solid rgba(255,255,255,.35);padding:0 0 34px 28px}.tl li::before{top:6px;left:-5px}.tl li:last-child{padding-bottom:0}.tl .num{font-size:2rem}}
+
+/* expect */
+.expect{display:grid;grid-template-columns:repeat(3,1fr)}
+.expect>div{padding:6px 32px;border-left:1px solid var(--line)}
+.expect>div:first-child{padding-left:0;border-left:0}
+.expect .ic{font-size:1.9rem;color:var(--accent);width:1em;height:1em;margin-bottom:14px}
+.expect h3{font-size:1.3rem;margin-bottom:8px}
+.expect p{color:var(--muted)}
+@media (max-width:720px){.expect{grid-template-columns:1fr;gap:26px}.expect>div,.expect>div:first-child{padding:0 0 0 18px;border-left:2px solid var(--accent)}
+ .colo{display:none}}
+
+/* faq as ruled list */
+.faq details{border-radius:0;border:0;border-top:1px solid var(--line);background:transparent}
+.faq{gap:0;border-bottom:1px solid var(--line)}
+.faq summary{font:600 1.15rem/1.4 var(--font-h);padding:20px 4px}
+.faq .ans{padding:0 4px 22px}
+
+/* slots */
+.slots{background:var(--tint)}
+.slot-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.slot{border:1.5px dashed var(--muted);border-radius:6px;padding:30px;background:rgba(255,255,255,.55);display:grid;gap:10px;align-content:start}
+.slot.wide{grid-column:span 2;text-align:center;justify-items:center}
+.slot .ic{font-size:1.6rem;color:var(--accent)}
+.slot h3{font-size:1.25rem}
+.slot p{color:var(--muted);max-width:56ch}
+.slot .tag{font:700 .72rem/1 var(--font-b);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.slot-since{font:600 clamp(1.5rem,3vw,2.1rem)/1.25 var(--font-h)}
+.slot-since .ph{font-size:.8em}
+.lang{margin-top:22px;text-align:center;color:var(--muted)}
+@media (max-width:720px){.slot-grid{grid-template-columns:1fr}.slot.wide{grid-column:auto}.slot{padding:24px 20px}}
+
+/* contact */
+.adv{display:inline-block;border:1px solid var(--muted);color:var(--muted);font:700 .7rem/1 var(--font-b);letter-spacing:.16em;text-transform:uppercase;padding:7px 10px;border-radius:2px;margin-bottom:16px}
+.formcard{background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--accent);border-radius:4px;padding:28px}
+.formcard h3{font-size:1.4rem;margin-bottom:16px}
+.conf{margin-top:12px;padding:12px 14px;border-left:3px solid var(--accent);background:var(--tint);font-size:.9rem;color:var(--ink)}
+form.f input,form.f select,form.f textarea{border-radius:4px}
+.info-list .icon-badge{border-radius:50%;background:var(--surface);border:1px solid var(--accent)}
+.map{border-radius:4px}
+@media (max-width:720px){.formcard{padding:22px 18px}}
+{% endblock %}
+
+{% block body %}
+<div class="paper">
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="seal" aria-hidden="true">{{ b.initials }}</span><span class="t">{{ b.name }}</span></a>
+    <nav aria-label="Main"><a href="#areas">Practice areas</a><a href="#process">How it works</a><a href="#faq">FAQ</a><a href="#contact">Contact</a></nav>
+    {% if b.phone_tel %}<a class="tel" href="tel:{{ b.phone_tel }}">{{ icon('phone') }} {{ b.phone }}</a>{% endif %}
+    <a class="btn btn-primary" href="#contact"{% if not b.phone_tel %} style="margin-left:auto"{% endif %}>{{ n.cta_primary }}</a>
+  </div>
+</header>
+
+<div class="hero" id="top">
+  <div class="wrap hgrid">
+    <div>
+      <div class="orn"><span>{{ b.city_state }}</span></div>
+      <h1>{{ n.h1 }}</h1>
+      <p class="sub">{{ n.sub|rich }}</p>
+      <div class="ctas">
+        <a class="btn btn-primary" href="#contact">{{ n.cta_primary }}</a>
+        {% if b.phone_tel %}<a class="btn btn-line" href="tel:{{ b.phone_tel }}">{{ icon('phone') }} {{ n.cta_secondary }}</a>{% endif %}
+      </div>
+    </div>
+    <div class="watermark" aria-hidden="true">
+      <svg viewBox="0 0 340 340" fill="none" stroke="{{ pal.accent }}">
+        <circle cx="170" cy="170" r="164" stroke-width="1.2"/>
+        <circle cx="170" cy="170" r="152" stroke-width=".8" stroke-dasharray="2 6"/>
+        <circle cx="170" cy="170" r="112" stroke-width="1"/>
+        <path d="M170 6v22M170 312v22M6 170h22M312 170h22" stroke-width="1.2"/>
+      </svg>
+      <b>{{ b.initials }}</b>
+    </div>
+  </div>
+  <div class="wrap"><svg class="colo" viewBox="0 0 1000 70" preserveAspectRatio="none" fill="none" stroke="{{ pal.accent }}" stroke-width="1.2" aria-hidden="true">
+    <path d="M0 8H1000M0 14H1000M0 66H1000M0 60H1000" opacity=".8"/>
+    <g opacity=".85">{% for i in range(0,21) %}<path d="M{{ 25+i*47.5 }} 14V60M{{ 33+i*47.5 }} 14V60M{{ 41+i*47.5 }} 14V60" vector-effect="non-scaling-stroke"/>{% endfor %}</g>
+  </svg></div>
+  <div class="trust"><div class="wrap"><ul>
+    {% for c in n.chips %}<li>{{ icon('check') }}{{ c }}</li>{% endfor %}
+  </ul></div></div>
+</div>
+
+<section id="areas">
+  <div class="wrap">
+    <div class="sec-head"><div class="orn"><span>Areas of practice</span></div><h2>{{ n.services_title }}</h2></div>
+    <ul class="areas">
+      {% for ic, title, desc in n.services %}<li><h3>{{ title }}</h3><p>{{ desc }}</p></li>{% endfor %}
+    </ul>
+    <p class="note-line">{{ '[[Your attorney will choose the real practice areas]]'|rich }}</p>
+  </div>
+</section>
+
+<section class="tl-wrap" id="process">
+  <div class="wrap">
+    <div class="sec-head"><div class="orn"><span>The process</span></div><h2>{{ n.steps_title }}</h2></div>
+    <ol class="tl">
+      {% set rn = ['I','II','III','IV'] %}
+      {% for title, desc in n.steps %}<li><span class="num">{{ rn[loop.index0] }}</span><h3>{{ title }}</h3><p>{{ desc|rich }}</p></li>{% endfor %}
+    </ol>
+  </div>
+</section>
+
+<section id="expect">
+  <div class="wrap">
+    <div class="sec-head"><div class="orn"><span>Our approach</span></div><h2>{{ n.extras.why_title }}</h2></div>
+    <div class="expect">
+      {% for ic, title, desc in n.extras.why %}
+      <div>{{ icon(ic) }}<h3>{{ title }}</h3><p>{{ desc|rich }}</p></div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="slots" id="firm">
+  <div class="wrap">
+    <div class="sec-head"><div class="orn"><span>About the firm</span></div><h2>Room for your story</h2>
+      <p>These panels are ready for your own details.</p></div>
+    <div class="slot-grid">
+      <div class="slot wide"><span class="tag">Firm background</span><p class="slot-since">{{ n.extras.since_placeholder.replace('{city}', b.city or 'your community')|rich }}</p></div>
+      <div class="slot">{{ icon('user') }}<h3>Attorney profile</h3><p>{{ '[[Add attorney name, photo and short bio]]'|rich }}</p></div>
+      <div class="slot">{{ icon('star') }}<h3>Client reviews</h3><p>{{ '[[Add real client reviews here]]'|rich }}</p></div>
+    </div>
+    <p class="lang">{{ n.extras.spanish_placeholder|rich }}</p>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head"><div class="orn"><span>Questions</span></div><h2>Common questions</h2></div>
+    {{ m.faq(n.faq) }}
+  </div>
+</section>
+
+<section id="contact" style="background:var(--tint)">
+  <div class="wrap">
+    <div class="sec-head"><div class="orn"><span>Contact</span></div><h2>Request a consultation</h2>
+      <p>Tell us briefly about your matter and we will follow up.</p></div>
+    <div class="contact-grid">
+      <div class="formcard">
+        <span class="adv">Attorney Advertising</span>
+        <h3>Send a message</h3>
+        {{ m.preview_form(n.cta_primary, matters=n.extras.form_matters, matter_label="Type of matter") }}
+        <p class="conf"><b>Please do not send confidential information through this form.</b></p>
+      </div>
+      <div>
+        {{ m.info_list(b) }}
+        {{ m.map_block(b) }}
+      </div>
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}

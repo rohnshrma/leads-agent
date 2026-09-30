@@ -1,0 +1,77 @@
+{# Shared building blocks. Every template imports these, so the honesty
+   guardrails (ribbon, footer note, disabled form) can never be forgotten. #}
+
+{% macro ribbon(b, owner) %}
+<div class="ribbon" role="note">
+  <b>Free design preview</b> made for {{ b.name }} by {{ owner.company }}. This is a sample, not the official website.
+</div>
+{% endmacro %}
+
+{% macro faq(items) %}
+<div class="faq">
+  {% for q, a in items %}
+  <details>
+    <summary>{{ q }}</summary>
+    <div class="ans">{{ a|rich }}</div>
+  </details>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro map_block(b, label="Get directions") %}
+{% if b.has_map or b.directions %}
+<div class="map">
+  {% if b.has_map %}<iframe title="Map showing {{ b.name }}" loading="lazy" src="{{ b.map_embed }}"></iframe>{% endif %}
+  {% if b.directions %}<a class="dir" href="{{ b.directions }}" target="_blank" rel="noopener">{{ icon('pin') }} {{ label }}</a>{% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{# Contact details list. hours: text or [[placeholder]] #}
+{% macro info_list(b, hours="[[Add your hours]]") %}
+<ul class="info-list">
+  {% if b.address %}<li><span class="icon-badge">{{ icon('pin') }}</span><div><small>Address</small>{{ b.address }}</div></li>{% endif %}
+  {% if b.phone %}<li><span class="icon-badge">{{ icon('phone') }}</span><div><small>Phone</small><a href="tel:{{ b.phone_tel }}">{{ b.phone }}</a></div></li>{% endif %}
+  {% if b.email %}<li><span class="icon-badge">{{ icon('mail') }}</span><div><small>Email</small><a href="mailto:{{ b.email }}">{{ b.email }}</a></div></li>{% endif %}
+  <li><span class="icon-badge">{{ icon('clock') }}</span><div><small>Hours</small>{{ hours|rich }}</div></li>
+</ul>
+{% endmacro %}
+
+{# A simple enquiry form. It is deliberately NOT connected to anything. #}
+{% macro preview_form(button="Send message", matters=none, matter_label="What do you need help with?") %}
+<form class="f" onsubmit="event.preventDefault();alert('This is a design preview, so the form is not connected yet.');">
+  <label>Name<input type="text" name="name" autocomplete="name" required></label>
+  <label>Phone<input type="tel" name="phone" autocomplete="tel"></label>
+  <label>Email<input type="email" name="email" autocomplete="email"></label>
+  {% if matters %}
+  <label>{{ matter_label }}
+    <select name="matter">{% for x in matters %}<option>{{ x }}</option>{% endfor %}</select>
+  </label>
+  {% endif %}
+  <label>Message<textarea name="message"></textarea></label>
+  <button class="btn btn-accent btn-block" type="submit">{{ button }}</button>
+  <span class="note">Preview only: this form does not send anything.</span>
+</form>
+{% endmacro %}
+
+{% macro footer(b, n, owner) %}
+<footer class="site">
+  <div class="wrap">
+    <strong>{{ b.name }}</strong>{% if b.address %} &middot; {{ b.address }}{% endif %}{% if b.phone %} &middot; <a href="tel:{{ b.phone_tel }}">{{ b.phone }}</a>{% endif %}
+    <p class="fine">
+      Design preview prepared by {{ owner.company }}{% if owner.email %} (<a href="mailto:{{ owner.email }}">{{ owner.email }}</a>){% endif %}.
+      Not affiliated with or published by {{ b.name }}. Highlighted items and all sample copy must be confirmed by the business before publishing.
+    </p>
+    {% if n.disclaimer %}<p class="fine">{{ n.disclaimer }}</p>{% endif %}
+  </div>
+</footer>
+{% endmacro %}
+
+{% macro callbar(b, n) %}
+{% if b.phone_tel %}
+<div class="callbar">
+  <a class="btn btn-primary" href="tel:{{ b.phone_tel }}">{{ icon('phone') }} Call</a>
+  <a class="btn btn-accent" href="#contact">{{ n.cta_primary }}</a>
+</div>
+{% endif %}
+{% endmacro %}
