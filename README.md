@@ -166,3 +166,27 @@ run_daily.sh            cron entry point
 data/leads.db           your ledger - back this up
 out/                    daily reports
 ```
+
+---
+
+## Sending results to the WebiGeeks Digital CRM
+
+Every run (the 8 AM schedule, or a manual run) can push its new leads straight
+into the CRM, and the CRM has a **Fetch new leads** button that starts a run.
+
+```
+CRM button -> GitHub Actions (this workflow) -> scripts/push_to_crm.py -> CRM /api/outreach/ingest
+8 AM schedule ---------------------------------^
+```
+
+Setup, once:
+
+1. In this GitHub repo: Settings -> Secrets and variables -> Actions
+   - **Variable** `CRM_URL` = your CRM API address, e.g. `https://webigeeks-digital-api.onrender.com`
+   - **Secret** `CRM_INGEST_TOKEN` = a long random string
+2. In the CRM API's settings (Render): `INGEST_TOKEN` = the same random string.
+3. For the button: create a fine-grained GitHub token limited to this repo with
+   **Actions: read and write**, and set it as `GITHUB_TOKEN` in the CRM API settings.
+
+Until those exist the push step is skipped and the workflow behaves as before
+(the CSV is still attached to each run as a downloadable artifact).

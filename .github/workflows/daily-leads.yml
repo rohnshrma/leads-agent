@@ -11,13 +11,21 @@ name: Daily US lead run
 on:
   schedule:
     - cron: "30 2 * * *"      # 02:30 UTC = 08:00 IST
-  workflow_dispatch:           # lets you trigger a run by hand
+  workflow_dispatch:           # lets you trigger a run by hand (or from the CRM button)
+    inputs:
+      crm_run_id:
+        description: "Set by the CRM so it can match the results to its run"
+        required: false
+        default: ""
 
 jobs:
   hunt:
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      CRM_URL: ${{ vars.CRM_URL }}
+      CRM_INGEST_TOKEN: ${{ secrets.CRM_INGEST_TOKEN }}
+      CRM_RUN_ID: ${{ inputs.crm_run_id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,3 +69,12 @@ jobs:
           name: leads-${{ github.run_number }}
           path: out/
           retention-days: 30
+
+      # Sends the new leads to the WebiGeeks Digital CRM. Skipped until the
+      # CRM_URL variable and CRM_INGEST_TOKEN secret exist.
+      - name: Send results to the CRM
+        run: python3 scripts/push_to_crm.py
+
+      - name: Tell the CRM the run failed
+        if: ${{ failure() }}
+        run: python3 scripts/push_to_crm.py --failed
