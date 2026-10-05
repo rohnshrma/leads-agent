@@ -73,8 +73,11 @@ jobs:
       # Sends the new leads to the WebiGeeks Digital CRM. Skipped until the
       # CRM_URL variable and CRM_INGEST_TOKEN secret exist.
       - name: Send results to the CRM
+        # A CRM outage must not fail the lead run; the CSV artifact above is the fallback.
+        continue-on-error: true
         run: python3 scripts/push_to_crm.py
 
       - name: Tell the CRM the run failed
         if: ${{ failure() }}
+        continue-on-error: true
         run: python3 scripts/push_to_crm.py --failed
