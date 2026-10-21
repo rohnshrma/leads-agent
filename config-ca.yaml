@@ -153,30 +153,31 @@ cities:
 # are actually mapped. Service-area trades (roofers, plumbers) are
 # thin in OSM - add them after you switch to source: "overture".
 # See leadagent/osm_tags.py for the full list of mapped niches.
+# Private-pay clinics only: patients pay them directly (or through private
+# insurance), they compete for patients, and a CAD 1,500-4,000 website is
+# routine spending for them. Family doctors and walk-in clinics are left
+# out: they are publicly funded and most already have waiting lists, so
+# they rarely buy marketing. Keep this list in step with PARTNER_NICHES in
+# the CRM (backend src/config/partnership.ts), which decides what the
+# partner can claim.
 niches:
   - "dental clinic"
-  - "driving school"
-  - "auto repair shop"
-  - "gym fitness studio"
-  - "law firm"
-  - "accounting firm"
-  - "chiropractor"
-  - "veterinary clinic"
-  - "daycare preschool"
+  - "orthodontist"
   - "med spa"
-  - "hair salon"
-  - "optician"
-  - "insurance agency"
-  - "real estate agency"
-  - "funeral home"
-  - "self storage"
+  - "dermatology clinic"
   - "physiotherapist"
-  - "travel agency"
+  - "chiropractor"
+  - "optometrist"
+  - "veterinary clinic"
+  - "hearing clinic"
+  - "psychology clinic"
+  - "podiatrist"
+  - "massage therapy clinic"
 
 # ---- HOW MUCH PER RUN --------------------------------------
 # Overpass is donated infrastructure, so keep runs modest and the
 # pause above in place. 20 queries x 40 results = plenty per day.
-queries_per_run: 45   # ~28 min; about a third of leads have a phone, the partner works 50 a day
+queries_per_run: 45   # ~28 min; 35 cities x 12 clinic types = 420 searches to rotate through
 max_places_per_query: 40
 
 # ---- WEBSITE AUDIT -----------------------------------------
@@ -244,17 +245,14 @@ scoring:
   category_value_tiers:
     High-value profession:
       points: 12
-      match: ["dentist", "dental", "lawyer", "law", "attorney", "doctor",
-              "medical", "clinic", "orthodont", "veterinar", "surgeon",
-              "accountant", "accounting", "financial", "insurance",
-              "real estate", "estate_agent", "funeral", "med spa"]
+      match: ["dentist", "dental", "orthodont", "med spa", "aesthetic",
+              "cosmetic", "laser", "dermatolog", "veterinar", "surgeon",
+              "lawyer", "law", "accountant", "accounting", "financial"]
     Solid local business:
       points: 6
-      match: ["driving_school", "driving school", "car_repair", "auto repair",
-              "hvac", "roofer", "roofing", "plumber", "electrician",
-              "fitness", "gym", "kindergarten", "childcare", "daycare",
-              "storage", "chiropract", "physiotherap", "optician",
-              "travel_agency"]
+      match: ["chiropract", "physiotherap", "optometr", "optician",
+              "audiolog", "hearing", "psycholog", "psychotherap",
+              "podiatr", "massage", "clinic", "doctor", "medical"]
     Thin margins:
       points: -8
       match: ["hairdresser", "nail", "cafe", "bakery", "florist", "tattoo",
