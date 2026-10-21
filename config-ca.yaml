@@ -1,0 +1,215 @@
+# ============================================================
+#  Canada Lead Agent - configuration (run with --config config-ca.yaml)
+#  Same engine as config.yaml; only the market, cities and sender differ.
+#  Everything here runs at ZERO cost. No API key, no credit
+#  card, no billing account anywhere.
+# ============================================================
+
+# ---- DATA SOURCE -------------------------------------------
+# "osm"      OpenStreetMap via Overpass API.
+#            FREE. No key, no account, no card. Works the moment
+#            you run it. Data is ODbL - yours to use with
+#            attribution. Best for businesses with PREMISES.
+#            START HERE.
+#
+# "overture" Overture Maps (Meta + Microsoft conflated, ~76M POIs).
+#            FREE. No key, no account, no card. Much better
+#            coverage, including service-area trades that OSM
+#            misses. Licence CDLA-Permissive-2.0 - the output is
+#            fully yours to store and even resell.
+#            Needs DuckDB, which downloads a small extension on
+#            first run. Switch to this once "osm" is working.
+#
+# "google"   NOT a free option in practice: Google requires a
+#            billing account (a credit card) on the project even
+#            to use its free tier. Left in only if that changes
+#            for you. It is the only source with review counts.
+source: "osm"
+
+overpass:
+  pause_seconds: 2.0     # be polite to donated public infrastructure
+  radius_km: 25.0        # search radius around each city centre
+
+overture_release: "2026-08-19.0"
+google_api_key_env: "GOOGLE_MAPS_API_KEY"
+
+# ---- WHERE TO HUNT -----------------------------------------
+# Mid-size Canadian metros, worked by the Canadian sales partner.
+# Quebec is left out on purpose: outreach there should be in French
+# (Charter of the French Language), which the templates don't do yet.
+country: "CA"
+
+cities:
+  - name: "Hamilton, ON"
+    lat: 43.2557
+    lng: -79.8711
+  - name: "London, ON"
+    lat: 42.9849
+    lng: -81.2453
+  - name: "Kitchener, ON"
+    lat: 43.4516
+    lng: -80.4925
+  - name: "Windsor, ON"
+    lat: 42.3149
+    lng: -83.0364
+  - name: "Barrie, ON"
+    lat: 44.3894
+    lng: -79.6903
+  - name: "Kingston, ON"
+    lat: 44.2312
+    lng: -76.486
+  - name: "Halifax, NS"
+    lat: 44.6488
+    lng: -63.5752
+  - name: "Winnipeg, MB"
+    lat: 49.8951
+    lng: -97.1384
+  - name: "Saskatoon, SK"
+    lat: 52.1332
+    lng: -106.67
+  - name: "Regina, SK"
+    lat: 50.4452
+    lng: -104.6189
+
+# ---- WHAT TO HUNT ------------------------------------------
+# Chosen for OSM coverage: these businesses have PREMISES, so they
+# are actually mapped. Service-area trades (roofers, plumbers) are
+# thin in OSM - add them after you switch to source: "overture".
+# See leadagent/osm_tags.py for the full list of mapped niches.
+niches:
+  - "dental clinic"
+  - "driving school"
+  - "auto repair shop"
+  - "gym fitness studio"
+  - "law firm"
+  - "accounting firm"
+  - "chiropractor"
+  - "veterinary clinic"
+  - "daycare preschool"
+  - "med spa"
+  - "hair salon"
+  - "optician"
+  - "insurance agency"
+  - "real estate agency"
+  - "funeral home"
+  - "self storage"
+  - "physiotherapist"
+  - "travel agency"
+
+# ---- HOW MUCH PER RUN --------------------------------------
+# Overpass is donated infrastructure, so keep runs modest and the
+# pause above in place. 20 queries x 40 results = plenty per day.
+queries_per_run: 30   # the partner works up to 50 leads a day
+max_places_per_query: 40
+
+# ---- WEBSITE AUDIT -----------------------------------------
+website_audit:
+  enabled: true
+  timeout_seconds: 12
+  # Treat these as "NO REAL WEBSITE" even though a URL exists.
+  # This is the single biggest source of hidden leads.
+  social_only_domains:
+    - facebook.com
+    - m.facebook.com
+    - instagram.com
+    - linktr.ee
+    - yelp.com
+    - nextdoor.com
+    - tripadvisor.com
+    - doordash.com
+    - toasttab.com
+    - booksy.com
+    - vagaro.com
+    - square.site
+    - business.site          # Google's retired site builder
+    - sites.google.com
+    - godaddysites.com
+    - wixsite.com            # unconfigured free Wix subdomain
+    - weebly.com
+    - blogspot.com
+    - wordpress.com
+
+# ---- SCORING ------------------------------------------------
+# Higher opportunity_score = better lead for you.
+scoring:
+  # Website problems
+  no_website_points: 55
+  social_only_points: 45
+  dead_site_points: 40
+  under_construction_points: 35
+  no_https_points: 12
+  not_mobile_friendly_points: 14
+  slow_load_points: 8            # > 4s
+  very_slow_load_points: 6       # extra if > 8s
+  stale_copyright_points: 8      # copyright year 2+ years old
+  no_meta_description_points: 5
+  no_title_points: 5
+
+  # Credibility on FREE sources (no reviews exist)
+  has_phone_points: 14
+  no_phone_penalty: 25           # unreachable = not a lead
+  has_email_points: 6
+  multi_source_points: 8         # several datasets agreed it exists
+  high_confidence_points: 8      # Overture confidence >= 0.8
+  low_confidence_penalty: 12     # Overture confidence < 0.55
+
+  # Credibility on Google only (used if you ever enable billing)
+  min_reviews_to_qualify: 5
+  reviews_bonus_tiers:
+    - [200, 15]
+    - [75, 12]
+    - [25, 8]
+    - [5, 4]
+  thin_reviews_penalty: 18
+  good_rating_bonus: 6
+
+  # Can this category afford a $1,500 website?
+  category_value_tiers:
+    High-value profession:
+      points: 12
+      match: ["dentist", "dental", "lawyer", "law", "attorney", "doctor",
+              "medical", "clinic", "orthodont", "veterinar", "surgeon",
+              "accountant", "accounting", "financial", "insurance",
+              "real estate", "estate_agent", "funeral", "med spa"]
+    Solid local business:
+      points: 6
+      match: ["driving_school", "driving school", "car_repair", "auto repair",
+              "hvac", "roofer", "roofing", "plumber", "electrician",
+              "fitness", "gym", "kindergarten", "childcare", "daycare",
+              "storage", "chiropract", "physiotherap", "optician",
+              "travel_agency"]
+    Thin margins:
+      points: -8
+      match: ["hairdresser", "nail", "cafe", "bakery", "florist", "tattoo",
+              "laundry", "dry_cleaning"]
+
+# Only report leads at or above this score.
+min_score_to_report: 40
+
+# ---- OUTREACH ----------------------------------------------
+outreach:
+  your_name: "Arian"
+  your_company: "WebiGeeks Digital"
+  your_email: "arian@webigeeksdigital.com"
+  your_phone: ""   # Arian's Canadian number
+  # CAN-SPAM requires a real postal address in every commercial email.
+  your_postal_address: "Sector 14, Old DLF Colony, Gurugram, Haryana 122001, India"
+  calendar_link: ""
+  best_call_windows_local: ["09:00-11:00", "14:00-16:00"]
+
+# ---- WEBSITE MOCKUPS ---------------------------------------
+# One free sample homepage per lead in the six niches (dental, driving
+# school, auto repair, gym, law, accounting). Static files in out/mockups.
+# base_url is where that folder is published (Cloudflare Pages, custom
+# domain). Each page lives at base_url/<business-name>-<random>/.
+mockups:
+  enabled: false   # the CRM builds mockups for Canadian leads on demand
+  dir: "mockups"
+  base_url: "https://demo.webigeeksdigital.com"
+
+# ---- OUTPUT -------------------------------------------------
+output:
+  dir: "out"
+  keep_days: 30
+  write_csv: true
+  write_html: true

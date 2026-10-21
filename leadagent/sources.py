@@ -223,7 +223,8 @@ class OverpassSource:
         street = tags.get("addr:street", "")
         line1 = " ".join(x for x in (num, street) if x)
         city = tags.get("addr:city", "")
-        state = tags.get("addr:state", "")
+        # Canadian addresses are often tagged addr:province instead of addr:state.
+        state = tags.get("addr:state", "") or tags.get("addr:province", "")
         post = tags.get("addr:postcode", "")
         tail = f"{city}, {state} {post}".strip().strip(",").strip()
         return ", ".join(x for x in (line1, tail) if x)

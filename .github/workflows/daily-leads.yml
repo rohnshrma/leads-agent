@@ -6,17 +6,22 @@
 #   2. Actions tab -> enable workflows.
 #   3. Done. Each run attaches the CSV + HTML report as a downloadable
 #      artifact. Free tier covers this easily (~2 min/day of 2,000 min/mo).
-name: Daily US lead run
+name: Daily lead run (US and Canada)
 
 on:
   schedule:
-    - cron: "30 2 * * *"      # 02:30 UTC = 08:00 IST
+    - cron: "30 2 * * *"      # 02:30 UTC = 08:00 IST  -> US leads
+    - cron: "0 10 * * *"      # 10:00 UTC = 6:00 am Toronto -> Canadian leads
   workflow_dispatch:           # lets you trigger a run by hand (or from the CRM button)
     inputs:
       crm_run_id:
         description: "Set by the CRM so it can match the results to its run"
         required: false
         default: ""
+      market:
+        description: "us or ca"
+        required: false
+        default: "us"
 
 jobs:
   hunt:
@@ -26,6 +31,8 @@ jobs:
       CRM_URL: ${{ vars.CRM_URL }}
       CRM_INGEST_TOKEN: ${{ secrets.CRM_INGEST_TOKEN }}
       CRM_RUN_ID: ${{ inputs.crm_run_id }}
+      # The 10:00 UTC schedule and CRM runs started by the Canadian partner are "ca".
+      MARKET: ${{ inputs.market || (github.event.schedule == '0 10 * * *' && 'ca') || 'us' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,8 +48,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data
-          key: lead-ledger-${{ github.run_id }}
-          restore-keys: lead-ledger-
+          key: lead-ledger-${{ env.MARKET }}-${{ github.run_id }}
+          # The second line picks up the ledger saved before runs were split by market.
+          restore-keys: |
+            lead-ledger-${{ env.MARKET }}-
+            lead-ledger-
 
       # Mockups accumulate here so links sent on earlier days keep working.
       - name: Restore mockup site
@@ -53,12 +63,13 @@ jobs:
           restore-keys: mockups-
 
       - name: Hunt
-        run: python3 run.py
+        run: python3 run.py --config ${{ env.MARKET == 'ca' && 'config-ca.yaml' || 'config.yaml' }}
 
       # Publishes out/mockups to demo.webigeeksdigital.com (Vercel project
       # "webigeeks-demo"). Skipped until the three secrets below exist.
       - name: Publish mockups
-        if: ${{ env.VERCEL_TOKEN != '' }}
+        # US only: a Canadian run builds no static mockups and must not overwrite the site.
+        if: ${{ env.VERCEL_TOKEN != '' && env.MARKET == 'us' }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -66,7 +77,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: leads-${{ github.run_number }}
+          name: leads-${{ env.MARKET }}-${{ github.run_number }}
           path: out/
           retention-days: 30
 

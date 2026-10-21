@@ -165,6 +165,9 @@ def main() -> int:
                 fresh=len(fresh), reported=len(reported), source=src_name)
 
     rows = [b.as_row() for b in reported]
+    # Tells the CRM which market these leads belong to (config-ca.yaml sets "CA").
+    for r in rows:
+        r["country"] = cfg.get("country", "US")
     mk = cfg.get("mockups", {}) or {}
     if mk.get("enabled") and rows:
         from leadagent.mockups import build_mockups

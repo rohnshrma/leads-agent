@@ -12,6 +12,7 @@ Usage:
 Environment:
   CRM_URL, CRM_INGEST_TOKEN   required (the step is skipped when unset)
   CRM_RUN_ID                  set when the run was started from the CRM button
+  MARKET                      "us" (default) or "ca"
   GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID   set by GitHub Actions
 """
 import csv
@@ -75,7 +76,11 @@ def main() -> None:
     if not (os.environ.get("CRM_URL") and os.environ.get("CRM_INGEST_TOKEN")):
         print("CRM_URL / CRM_INGEST_TOKEN not set - skipping CRM push")
         return
-    payload = {"runId": os.environ.get("CRM_RUN_ID") or None, "githubRunUrl": run_url()}
+    payload = {
+        "runId": os.environ.get("CRM_RUN_ID") or None,
+        "githubRunUrl": run_url(),
+        "market": os.environ.get("MARKET") or "us",
+    }
     if "--failed" in sys.argv:
         payload.update(status="failed", error="The GitHub workflow failed. See the run log.")
     else:
