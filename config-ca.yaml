@@ -34,7 +34,9 @@ overture_release: "2026-08-19.0"
 google_api_key_env: "GOOGLE_MAPS_API_KEY"
 
 # ---- WHERE TO HUNT -----------------------------------------
-# Mid-size Canadian metros, worked by the Canadian sales partner.
+# Canadian cities outside Quebec, worked by the Canadian sales partner.
+# The finder skips every business it has seen before, so a long list keeps
+# about 50 new callable leads a day coming instead of drying up in a week.
 # Quebec is left out on purpose: outreach there should be in French
 # (Charter of the French Language), which the templates don't do yet.
 country: "CA"
@@ -70,6 +72,81 @@ cities:
   - name: "Regina, SK"
     lat: 50.4452
     lng: -104.6189
+  - name: "Toronto, ON"
+    lat: 43.6532
+    lng: -79.3832
+  - name: "Mississauga, ON"
+    lat: 43.589
+    lng: -79.6441
+  - name: "Vaughan, ON"
+    lat: 43.8361
+    lng: -79.4983
+  - name: "Oshawa, ON"
+    lat: 43.8971
+    lng: -78.8658
+  - name: "Ottawa, ON"
+    lat: 45.4215
+    lng: -75.6972
+  - name: "St. Catharines, ON"
+    lat: 43.1594
+    lng: -79.2469
+  - name: "Guelph, ON"
+    lat: 43.5448
+    lng: -80.2482
+  - name: "Brantford, ON"
+    lat: 43.1394
+    lng: -80.2644
+  - name: "Peterborough, ON"
+    lat: 44.3091
+    lng: -78.3197
+  - name: "Belleville, ON"
+    lat: 44.1628
+    lng: -77.3832
+  - name: "Sarnia, ON"
+    lat: 42.9745
+    lng: -82.4066
+  - name: "Sudbury, ON"
+    lat: 46.4917
+    lng: -80.993
+  - name: "Thunder Bay, ON"
+    lat: 48.3809
+    lng: -89.2477
+  - name: "Vancouver, BC"
+    lat: 49.2827
+    lng: -123.1207
+  - name: "Surrey, BC"
+    lat: 49.1913
+    lng: -122.849
+  - name: "Abbotsford, BC"
+    lat: 49.0504
+    lng: -122.3045
+  - name: "Victoria, BC"
+    lat: 48.4284
+    lng: -123.3656
+  - name: "Kelowna, BC"
+    lat: 49.888
+    lng: -119.496
+  - name: "Calgary, AB"
+    lat: 51.0447
+    lng: -114.0719
+  - name: "Edmonton, AB"
+    lat: 53.5461
+    lng: -113.4938
+  - name: "Red Deer, AB"
+    lat: 52.2681
+    lng: -113.8112
+  - name: "Lethbridge, AB"
+    lat: 49.6956
+    lng: -112.8451
+  - name: "Moncton, NB"
+    lat: 46.0878
+    lng: -64.7782
+  - name: "Saint John, NB"
+    lat: 45.2733
+    lng: -66.0633
+  - name: "St. John's, NL"
+    lat: 47.5615
+    lng: -52.7126
 
 # ---- WHAT TO HUNT ------------------------------------------
 # Chosen for OSM coverage: these businesses have PREMISES, so they
@@ -99,7 +176,7 @@ niches:
 # ---- HOW MUCH PER RUN --------------------------------------
 # Overpass is donated infrastructure, so keep runs modest and the
 # pause above in place. 20 queries x 40 results = plenty per day.
-queries_per_run: 30   # the partner works up to 50 leads a day
+queries_per_run: 45   # ~28 min; about a third of leads have a phone, the partner works 50 a day
 max_places_per_query: 40
 
 # ---- WEBSITE AUDIT -----------------------------------------
