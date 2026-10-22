@@ -170,9 +170,12 @@ class OverpassSource:
 
     MIRRORS = [
         "https://overpass-api.de/api/interpreter",
+        "https://overpass.private.coffee/api/interpreter",
         "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.osm.jp/api/interpreter",
     ]
+    # Busy mirrors answer 429/504. A second pass after this pause recovers most of them
+    # (about a third of Canadian searches failed on every mirror in one pass).
+    RETRY_PAUSE = 30.0
 
     def __init__(self, max_places: int = 40, pause: float = 2.0,
                  radius_km: float = 25.0):
@@ -269,22 +272,25 @@ class OverpassSource:
     def search(self, niche: str, city: dict) -> list["Business"]:
         q = self._query(niche, city)
         last_err = None
-        for url in self.MIRRORS:
-            self._throttle()
-            try:
-                r = requests.post(
-                    url, data={"data": q}, timeout=120,
-                    headers={"User-Agent": (
-                        "WebiGeeksLeadAgent/1.0 (contact: "
-                        "rohan@webigeeksdigital.com)")},
-                )
-                if r.status_code == 200:
-                    return self.parse(r.json(), niche, city)
-                # 429/504 mean the instance is busy - try the next mirror.
-                last_err = f"{url} -> HTTP {r.status_code}"
-            except requests.RequestException as ex:
-                last_err = f"{url} -> {type(ex).__name__}"
-        raise RuntimeError(f"all Overpass mirrors failed ({last_err})")
+        for attempt in range(2):
+            if attempt:
+                time.sleep(self.RETRY_PAUSE)
+            for url in self.MIRRORS:
+                self._throttle()
+                try:
+                    r = requests.post(
+                        url, data={"data": q}, timeout=120,
+                        headers={"User-Agent": (
+                            "WebiGeeksLeadAgent/1.0 (contact: "
+                            "rohan@webigeeksdigital.com)")},
+                    )
+                    if r.status_code == 200:
+                        return self.parse(r.json(), niche, city)
+                    # 429/504 mean the instance is busy - try the next mirror.
+                    last_err = f"{url} -> HTTP {r.status_code}"
+                except requests.RequestException as ex:
+                    last_err = f"{url} -> {type(ex).__name__}"
+        raise RuntimeError(f"all Overpass mirrors failed twice ({last_err})")
 
 
 # --------------------------------------------------------------------

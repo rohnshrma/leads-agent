@@ -17,7 +17,10 @@ NICHE_TAGS: dict[str, list[str]] = {
     "tyre shop":            ['shop="tyres"'],
     "dental clinic":        ['amenity="dentist"', 'healthcare="dentist"'],
     "doctor clinic":        ['amenity="doctors"', 'healthcare="doctor"'],
-    "chiropractor":         ['healthcare="chiropractor"'],
+    # Most chiropractors are mapped as healthcare=alternative with a chiropractic speciality;
+    # healthcare=chiropractor alone found 0 in every Canadian city.
+    "chiropractor":         ['"healthcare:speciality"~"chiropract"', 'healthcare="chiropractor"',
+                             'healthcare][name~"chiropract",i', 'amenity="clinic"][name~"chiropract",i'],
     "physiotherapist":      ['healthcare="physiotherapist"'],
     "veterinary clinic":    ['amenity="veterinary"'],
     "optician":             ['shop="optician"'],
@@ -25,7 +28,9 @@ NICHE_TAGS: dict[str, list[str]] = {
     "orthodontist":         ['"healthcare:speciality"~"orthodont"', 'amenity="dentist"][name~"orthodont",i'],
     "dermatology clinic":   ['"healthcare:speciality"~"dermatolog"', 'amenity="clinic"][name~"derm|skin|laser|cosmetic|aesthetic",i'],
     "hearing clinic":       ['healthcare="audiologist"', 'shop="hearing_aids"'],
-    "psychology clinic":    ['healthcare="psychotherapist"', 'healthcare="psychologist"'],
+    "psychology clinic":    ['healthcare="psychotherapist"', 'healthcare="psychologist"',
+                             '"healthcare:speciality"~"psycholog|psychotherap"',
+                             'healthcare][name~"psycholog|counsell?ing",i'],
     "podiatrist":           ['healthcare="podiatrist"'],
     "massage therapy clinic": ['healthcare="massage"', 'shop="massage"'],
     "pharmacy":             ['amenity="pharmacy"'],
