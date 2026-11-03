@@ -1,17 +1,24 @@
-# Runs the agent every morning at 8:00 AM IST on GitHub's free runners.
-# No secrets to configure - the default data source needs no API key.
+# Finds leads for the WebiGeeks Digital CRM.
+#
+# Two ways it starts:
+#   - By hand: the CRM's "Fetch new leads" button (or "Run workflow" on GitHub). Always runs.
+#   - By the clock (the two crons below): runs ONLY if the CRM says automatic fetching is on
+#     and that market's country is enabled. Both are off by default, so by default the clock
+#     starts this workflow, sees "off" in the gate step and stops after a few seconds.
+#
+# The CRM owner switches these in the Fetch panel (Fetch settings). The gate fails closed: if the
+# CRM cannot be reached, the scheduled run is skipped.
 #
 # Setup:
 #   1. Push this folder to a GitHub repo (private is fine).
 #   2. Actions tab -> enable workflows.
-#   3. Done. Each run attaches the CSV + HTML report as a downloadable
-#      artifact. Free tier covers this easily (~2 min/day of 2,000 min/mo).
-name: Daily lead run (US and Canada)
+#   3. Add the CRM_URL variable and CRM_INGEST_TOKEN secret (see README).
+name: Lead run (US and Canada)
 
 on:
   schedule:
-    - cron: "30 2 * * *"      # 02:30 UTC = 08:00 IST  -> US leads
-    - cron: "0 10 * * *"      # 10:00 UTC = 6:00 am Toronto -> Canadian leads
+    - cron: "30 2 * * *"      # 02:30 UTC = 08:00 IST  -> US leads (only if switched on in the CRM)
+    - cron: "0 10 * * *"      # 10:00 UTC = 6:00 am Toronto -> Canadian leads (only if switched on)
   workflow_dispatch:           # lets you trigger a run by hand (or from the CRM button)
     inputs:
       crm_run_id:
@@ -21,7 +28,23 @@ on:
       market:
         description: "us or ca"
         required: false
-        default: "us"
+        default: "ca"
+      area:
+        description: "Optional: search one area (city, suburb or postal code) instead of the usual cities"
+        required: false
+        default: ""
+      radius_km:
+        description: "Optional: search radius around the area, 1-50"
+        required: false
+        default: ""
+      niches:
+        description: "Optional: comma-separated business types (default: all of them)"
+        required: false
+        default: ""
+      min_score:
+        description: "Optional: only report leads scoring at least this (0-100)"
+        required: false
+        default: ""
 
 jobs:
   hunt:
@@ -31,8 +54,17 @@ jobs:
       CRM_URL: ${{ vars.CRM_URL }}
       CRM_INGEST_TOKEN: ${{ secrets.CRM_INGEST_TOKEN }}
       CRM_RUN_ID: ${{ inputs.crm_run_id }}
-      # The 10:00 UTC schedule and CRM runs started by the Canadian partner are "ca".
-      MARKET: ${{ inputs.market || (github.event.schedule == '0 10 * * *' && 'ca') || 'us' }}
+      # Optional. Only used when google_verify.enabled is true in the config; empty means the Google check is skipped.
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+      # The 10:00 UTC schedule is "ca"; a run started by hand says which market it wants (default Canada).
+      MARKET: ${{ inputs.market || (github.event.schedule == '30 2 * * *' && 'us') || 'ca' }}
+      EVENT_NAME: ${{ github.event_name }}
+      # User-typed values are passed as environment variables and quoted in the shell, never pasted
+      # into the command line, so a hostile area name cannot run commands.
+      FETCH_AREA: ${{ inputs.area }}
+      FETCH_RADIUS_KM: ${{ inputs.radius_km }}
+      FETCH_NICHES: ${{ inputs.niches }}
+      FETCH_MIN_SCORE: ${{ inputs.min_score }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,11 +72,18 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Scheduled runs stop here unless the CRM has automatic fetching switched on.
+      - name: Should this run?
+        id: gate
+        run: python3 scripts/check_auto_fetch.py
+
       - name: Install deps
+        if: steps.gate.outputs.proceed == 'true'
         run: pip install -r requirements.txt
 
       # Keep the ledger between runs so you never see the same lead twice.
       - name: Restore lead ledger
+        if: steps.gate.outputs.proceed == 'true'
         uses: actions/cache@v4
         with:
           path: data
@@ -56,6 +95,7 @@ jobs:
 
       # Mockups accumulate here so links sent on earlier days keep working.
       - name: Restore mockup site
+        if: steps.gate.outputs.proceed == 'true'
         uses: actions/cache@v4
         with:
           path: out/mockups
@@ -63,19 +103,29 @@ jobs:
           restore-keys: mockups-
 
       - name: Hunt
-        run: python3 run.py --config ${{ env.MARKET == 'ca' && 'config-ca.yaml' || 'config.yaml' }}
+        if: steps.gate.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          if [ "$MARKET" = "ca" ]; then CONFIG=config-ca.yaml; else CONFIG=config.yaml; fi
+          args=(--config "$CONFIG")
+          [ -n "$FETCH_AREA" ]      && args+=(--area "$FETCH_AREA")
+          [ -n "$FETCH_RADIUS_KM" ] && args+=(--radius-km "$FETCH_RADIUS_KM")
+          [ -n "$FETCH_NICHES" ]    && args+=(--niches "$FETCH_NICHES")
+          [ -n "$FETCH_MIN_SCORE" ] && args+=(--min-score "$FETCH_MIN_SCORE")
+          python3 run.py "${args[@]}"
 
       # Publishes out/mockups to demo.webigeeksdigital.com (Vercel project
       # "webigeeks-demo"). Skipped until the three secrets below exist.
       - name: Publish mockups
         # US only: a Canadian run builds no static mockups and must not overwrite the site.
-        if: ${{ env.VERCEL_TOKEN != '' && env.MARKET == 'us' }}
+        if: ${{ steps.gate.outputs.proceed == 'true' && env.VERCEL_TOKEN != '' && env.MARKET == 'us' }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: npx --yes vercel@latest deploy out/mockups --prod --yes --token="$VERCEL_TOKEN"
 
       - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.proceed == 'true'
         with:
           name: leads-${{ env.MARKET }}-${{ github.run_number }}
           path: out/
@@ -84,11 +134,12 @@ jobs:
       # Sends the new leads to the WebiGeeks Digital CRM. Skipped until the
       # CRM_URL variable and CRM_INGEST_TOKEN secret exist.
       - name: Send results to the CRM
+        if: steps.gate.outputs.proceed == 'true'
         # A CRM outage must not fail the lead run; the CSV artifact above is the fallback.
         continue-on-error: true
         run: python3 scripts/push_to_crm.py
 
       - name: Tell the CRM the run failed
-        if: ${{ failure() }}
+        if: ${{ failure() && steps.gate.outputs.proceed == 'true' }}
         continue-on-error: true
         run: python3 scripts/push_to_crm.py --failed

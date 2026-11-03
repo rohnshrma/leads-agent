@@ -109,6 +109,47 @@ and gives you the review count for the ones that matter.
 
 ---
 
+## Cutting out the junk leads (free, on by default)
+
+The map data lists businesses nobody can sell to. Before any website is audited, `quality_filters:` in the
+config drops or fixes three kinds. On the 84 Canadian leads of 25 Oct, hand-checking a sample found chains
+(LensCrafters, Hakim Optical, Optimum Wellness), a clinic with a site the map lacked (Cor-Dent), and
+records with wrong or missing phones.
+
+| Filter | What it does |
+|---|---|
+| `skip_chains` | Drops known chains, anything OpenStreetMap tags with a `brand`, and one name found at 3+ separate places. Add your own in `chain_names`. |
+| `require_phone` | Drops records with no usable phone number. A no-website lead can only be reached by phone. |
+| `infer_website_from_email` | An email on the business's own domain (`info@theirclinic.ca`) means it has a website. That site is audited instead of being called "NO WEBSITE". |
+
+The auditor also retries once, with a longer wait, before calling a slow site "BROKEN". Each run prints how many
+leads were dropped and why. Switch any filter off in `config.yaml` / `config-ca.yaml`.
+
+## Google check (optional, OFF)
+
+The free sources cannot see closed businesses, websites missing from the map, or demand. A Google Places lookup
+of the best candidates can. It is built but switched off. It runs only when `google_verify.enabled: true` **and**
+the key in `GOOGLE_MAPS_API_KEY` is set (add it as a GitHub Actions secret). It then:
+
+- drops businesses Google says are closed;
+- re-grades a lead when Google lists a website the map lacked, so false "NO WEBSITE" leads are not reported;
+- takes points off a lead Google cannot find (name or phone probably out of date);
+- adds points for reviews when the business is verified and has no website.
+
+**Cost and limits.** It uses Text Search with phone/website/rating, Google's Enterprise SKU: the first 1,000
+requests a month are free, then $35 per 1,000. It makes one request per candidate. `monthly_call_cap` (default
+900, counted in the ledger) and `max_per_run` (default 40) stop it spending; a bad key or quota error stops the
+run. Also set a daily quota in the Google Cloud console, which is the cap Google itself enforces. A billing
+account is required.
+
+**Licence.** Google allows storing place IDs but not its other content, so by default only `google_place_id`
+and `google_status` are kept; Google's website, rating and review count are used to decide and then discarded.
+`keep_google_fields: true` keeps them, but check Google's current Maps Platform terms first. Whether Google's
+terms allow building lead lists was not confirmed; read them before turning this on for real use.
+
+**Try it before trusting it.** Run it for a week on the free allowance and compare, on one checklist, how many of
+the leads it passes versus the ones it would have dropped are genuinely callable.
+
 ## What the scores mean
 
 | Lead type | What it means | How hard to sell |
@@ -159,6 +200,9 @@ config.yaml             everything you tune
 leadagent/sources.py    OSM/Overpass + Overture + (optional) Google
 leadagent/osm_tags.py   niche -> OpenStreetMap tag mapping
 leadagent/audit.py      website grading + scoring
+leadagent/quality.py    free filters: chains, no-phone records, website inferred from email
+leadagent/google_verify.py  optional Google Places check (off by default, capped)
+tests/                  python -m unittest discover -s tests
 leadagent/ledger.py     dedupe (never shows a lead twice)
 leadagent/report.py     CSV + HTML output, IST call windows, attribution
 run_daily.sh            cron entry point
@@ -190,3 +234,25 @@ Setup, once:
 
 Until those exist the push step is skipped and the workflow behaves as before
 (the CSV is still attached to each run as a downloadable artifact).
+
+---
+
+## Fetching by hand: area, filters and the on/off switches
+
+The CRM's **Fetch new leads** button can start a run with choices (Area & filters), and the owner has a
+**Fetch settings** box. These reach this repo as inputs of the workflow and as `run.py` options:
+
+```bash
+python3 run.py --config config-ca.yaml --area "Brampton, ON" --radius-km 15 --niches "med spa,dental clinic" --min-score 55
+```
+
+- `--area` searches just that place (a configured city needs no lookup; anything else is looked up on
+  OpenStreetMap's Nominatim, restricted to the market's country). Without it, the usual cities rotate.
+- `--niches` must be from the config's list; `--radius-km` is 1-50; `--min-score` is 0-100. Bad values stop the run
+  with exit code 2 before anything is fetched. The ledger still hides businesses already found.
+- **Automatic runs are off by default.** The two crons still fire, but the first workflow step
+  (`scripts/check_auto_fetch.py`) asks the CRM and stops unless the owner switched on "Fetch automatically" and that
+  country. If the CRM cannot be reached it stops (fails closed). Runs started from the CRM button always go ahead.
+- The workflow passes typed values to `run.py` as quoted environment variables, never pasted into a shell command.
+- How often a person may click Fetch (default once per 24 hours each, changeable by the owner) is enforced by the CRM, not here.
+- Tests: `python -m unittest discover -s tests` (includes 1,000 hostile area strings).

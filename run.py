@@ -32,7 +32,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
-from leadagent import audit, report                       # noqa: E402
+from leadagent import audit, fetch_options, google_verify, quality, report  # noqa: E402
 from leadagent.ledger import Ledger                       # noqa: E402
 from leadagent.sources import (Business, build_source,      # noqa: E402
                                check_source)
@@ -98,9 +98,21 @@ def main() -> int:
                     help="ignore the ledger and report everything found")
     ap.add_argument("--check-source", action="store_true",
                     help="verify the data source is reachable, then exit")
+    ap.add_argument("--area", default=None,
+                    help="search one area (city, suburb or postal code) instead of rotating through the config cities")
+    ap.add_argument("--radius-km", default=None, help="search radius around --area, 1-50 km")
+    ap.add_argument("--niches", default=None,
+                    help="comma-separated business types, each one from the config's niche list")
+    ap.add_argument("--min-score", default=None, help="only report leads at or above this score, 0-100")
     args = ap.parse_args()
 
     cfg = load_cfg(Path(args.config))
+    try:
+        cfg, area_pairs = fetch_options.apply_options(
+            cfg, area=args.area, radius=args.radius_km, niches_csv=args.niches, min_score=args.min_score)
+    except fetch_options.OptionError as ex:
+        print(f"Cannot run with those options: {ex}", file=sys.stderr)
+        return 2
     if args.check_source:
         return check_source(cfg)
     outdir = ROOT / (cfg.get("output", {}).get("dir") or "out")
@@ -108,6 +120,9 @@ def main() -> int:
     ledger = Ledger(str(ROOT / "data" / "leads.db"))
 
     n = args.queries or cfg.get("queries_per_run", 25)
+    if area_pairs:
+        print(f"area search: {area_pairs[0][1]['name']} "
+              f"({cfg['overpass']['radius_km']:g} km), {len(area_pairs)} business types")
     found: list[Business] = []
     queries_made = 0
 
@@ -119,7 +134,7 @@ def main() -> int:
     else:
         src = build_source(cfg)
         src_name = cfg.get("source", "google")
-        for niche, city in todays_pairs(cfg, n):
+        for niche, city in (area_pairs or todays_pairs(cfg, n)):
             try:
                 got = src.search(niche, city)
                 queries_made += 1
@@ -139,6 +154,15 @@ def main() -> int:
             fresh.append(b)
     print(f"\n{len(found)} businesses, {len(fresh)} not seen before")
 
+    # Free quality filters: chains, records with no phone, and "no website" that is really a
+    # missing map tag (an email on the business's own domain means it has a site).
+    fresh, qrep = quality.apply(found, fresh, cfg)
+    if qrep["chains"] or qrep["no_phone"] or qrep["website_inferred"]:
+        print(f"quality filters: dropped {qrep['chains']} chains and {qrep['no_phone']} with no phone; "
+              f"{qrep['website_inferred']} websites inferred from email domains")
+        for line in qrep["dropped_names"][:8]:
+            print(f"   chain: {line}")
+
     # Audit websites in parallel - this is the slow part.
     if cfg.get("website_audit", {}).get("enabled", True):
         print(f"auditing {len(fresh)} websites...")
@@ -153,16 +177,33 @@ def main() -> int:
 
     for b in fresh:
         audit.score(b, cfg)
+
+    # Optional Google check of the best candidates. Off unless google_verify.enabled AND a key is set.
+    threshold = cfg.get("min_score_to_report", 40)
+    gsum: dict = {}
+    gv = google_verify.build(cfg, ledger)
+    if gv:
+        candidates = sorted((b for b in fresh if b.opportunity_score >= threshold),
+                            key=lambda b: -b.opportunity_score)
+        print(f"Google check: up to {gv.remaining()} lookups "
+              f"({gv.meter.used()} used this month, cap {gv.cap})")
+        gsum = gv.run(candidates)
+        print("Google check: " + (", ".join(f"{k} {v}" for k, v in gsum.items() if v) or "nothing to check"))
+        if gv.stopped:
+            print(f"Google check stopped early: {gv.stopped}")
+
+    for b in fresh:
         ledger.remember(b)
 
-    threshold = cfg.get("min_score_to_report", 40)
-    reported = sorted(
+    reported = sorted(  # (threshold was set above, before the optional Google check)
         (b for b in fresh if b.opportunity_score >= threshold),
         key=lambda b: -b.opportunity_score)
 
     stamp = datetime.now().strftime("%Y-%m-%d")
     meta = dict(date=stamp, queries=queries_made, found=len(found),
-                fresh=len(fresh), reported=len(reported), source=src_name)
+                fresh=len(fresh), reported=len(reported), source=src_name,
+                dropped_chains=qrep["chains"], dropped_no_phone=qrep["no_phone"],
+                websites_inferred=qrep["website_inferred"], google_check=gsum)
 
     rows = [b.as_row() for b in reported]
     # Tells the CRM which market these leads belong to (config-ca.yaml sets "CA").

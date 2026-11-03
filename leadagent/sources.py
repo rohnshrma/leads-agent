@@ -57,6 +57,10 @@ class Business:
     email: str = ""              # some OSM/Overture records carry one
     confidence: float | None = None   # Overture: how sure the place exists
     source_count: int | None = None   # how many datasets agreed it exists
+    brand: str = ""                   # OSM brand tag: set for chains and franchises
+    website_inferred: bool = False    # website guessed from the email's own domain
+    google_place_id: str = ""         # from the optional Google check (place IDs may be stored)
+    google_status: str = ""           # matched | no_match | not_checked | error ("" = check off)
     # filled in later by the auditor
     audit: dict = field(default_factory=dict)
     opportunity_score: int = 0
@@ -247,6 +251,7 @@ class OverpassSource:
             phone = self._first(
                 tags, "phone", "contact:phone", "contact:mobile", "telephone")
             email = self._first(tags, "email", "contact:email")
+            brand = self._first(tags, "brand", "brand:wikidata", "brand:en")
             category = self._first(
                 tags, "amenity", "shop", "office", "craft", "healthcare",
                 "leisure").replace("_", " ")
@@ -262,6 +267,7 @@ class OverpassSource:
                 phone=phone,
                 website=website,
                 email=email,
+                brand=brand,
                 business_status="OPERATIONAL",
                 maps_url=f"https://www.openstreetmap.org/{osm_id}",
                 lat=lat, lng=lng,

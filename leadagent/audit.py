@@ -121,14 +121,25 @@ def audit_site(url: str, cfg: dict) -> dict:
 
     target = _norm_url(url)
     t0 = time.time()
-    try:
-        r = requests.get(
-            target, timeout=timeout, allow_redirects=True,
-            headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"},
-        )
-    except (requests.RequestException, socket.error) as e:
+    r = None
+    err: Exception | None = None
+    # One slow answer is not a dead site (a clinic site that loads in 15s was being called "broken"),
+    # so a timeout or dropped connection gets a second try with a longer wait before the verdict.
+    for attempt in range(2):
+        try:
+            r = requests.get(
+                target, timeout=timeout * (1 if attempt == 0 else 1.75), allow_redirects=True,
+                headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"},
+            )
+            err = None
+            break
+        except (requests.RequestException, socket.error) as e:
+            err = e
+            if attempt == 0:
+                time.sleep(2)
+    if r is None:
         res["verdict"] = "BROKEN"
-        res["http_status"] = type(e).__name__
+        res["http_status"] = type(err).__name__
         res["load_seconds"] = round(time.time() - t0, 2)
         return res
 
@@ -210,6 +221,8 @@ def score(biz, cfg: dict) -> None:
     a = biz.audit or {}
     pts, why = 0, []
     verdict = a.get("verdict", "")
+    if getattr(biz, "website_inferred", False):
+        why.append(f"Website inferred from the email domain ({biz.website}); not in the map data")
 
     if verdict == "NO_WEBSITE":
         pts += s.get("no_website_points", 55)

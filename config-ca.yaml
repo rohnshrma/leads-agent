@@ -207,6 +207,37 @@ website_audit:
     - blogspot.com
     - wordpress.com
 
+# ---- QUALITY FILTERS (free, no key) ------------------------
+# The free map data lists chains, records nobody can phone, and businesses whose website is simply
+# missing from the map. These run before any website is audited.
+quality_filters:
+  enabled: true
+  skip_chains: true              # known chains, OSM brand tags, and one name at 3+ separate places
+  chain_min_locations: 3
+  skip_branded: true             # skip anything OpenStreetMap tags with a brand
+  chain_names: []                # add your own, e.g. ["Smiles Dental Group"]
+  require_phone: true            # a no-website lead can only be reached by phone
+  infer_website_from_email: true # info@theirclinic.ca means theirclinic.ca exists: audit it instead
+  free_email_domains: []         # extra mailbox providers to ignore
+
+# ---- GOOGLE CHECK (optional - OFF) -------------------------
+# Looks up the best candidates on Google Places to drop closed businesses, catch websites the map
+# lacks, and use reviews as a demand signal. Runs ONLY when enabled: true AND the key in the env var
+# named by google_api_key_env is set. Needs a Google Cloud billing account.
+# Text Search with phone/website/rating is the "Enterprise" SKU: first 1,000 requests a month free,
+# then $35 per 1,000. monthly_call_cap is counted in the ledger and never exceeded; ALSO set a daily
+# quota in the Google Cloud console, which is the cap Google itself enforces.
+google_verify:
+  enabled: true
+  monthly_call_cap: 450          # keep at or below 1000 to stay inside the free allowance
+  max_per_run: 15                # lookups per morning
+  min_name_similarity: 0.6
+  max_distance_m: 400
+  no_match_penalty: 20           # score taken off when Google has no matching listing
+  # Google lets you store place IDs, not its other content. false = keep only google_place_id and
+  # google_status; Google's website, rating and review count are used then discarded.
+  keep_google_fields: false
+
 # ---- SCORING ------------------------------------------------
 # Higher opportunity_score = better lead for you.
 scoring:
