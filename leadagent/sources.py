@@ -27,11 +27,23 @@ uses different credibility signals - see audit.py.
 from __future__ import annotations
 
 import os
+import random
+import threading
 import time
 from dataclasses import dataclass, field, asdict
 from typing import Iterable
 
 import requests
+
+from .safeurl import USER_AGENT
+
+
+class SearchFailed(RuntimeError):
+    """A search failed on every mirror. Recorded in the run summary; never treated as "0 results"."""
+
+
+class DeadlineReached(RuntimeError):
+    """The run's time limit is up: stop starting new requests and post what was found."""
 
 
 # --------------------------------------------------------------------
@@ -61,6 +73,9 @@ class Business:
     website_inferred: bool = False    # website guessed from the email's own domain
     google_place_id: str = ""         # from the optional Google check (place IDs may be stored)
     google_status: str = ""           # matched | no_match | not_checked | error ("" = check off)
+    phone_status: str = ""            # found | missing | google_live (phone is shown live from Google, never stored)
+    fetched_at: str = ""              # when this run saw the business (UTC, ISO)
+    from_google: bool = False         # the record came from Google Places: its fields are held in memory only
     # filled in later by the auditor
     audit: dict = field(default_factory=dict)
     opportunity_score: int = 0
@@ -74,7 +89,7 @@ class Business:
         for k in (
             "final_url", "http_status", "load_seconds", "https",
             "mobile_friendly", "platform", "page_kb", "title",
-            "has_meta_description", "copyright_year", "emails_found",
+            "has_meta_description", "copyright_year",
             "verdict",
         ):
             d[f"site_{k}"] = a.get(k, "")
@@ -174,19 +189,33 @@ class OverpassSource:
 
     MIRRORS = [
         "https://overpass-api.de/api/interpreter",
-        "https://overpass.private.coffee/api/interpreter",
         "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.private.coffee/api/interpreter",
     ]
-    # Busy mirrors answer 429/504. A second pass after this pause recovers most of them
-    # (about a third of Canadian searches failed on every mirror in one pass).
-    RETRY_PAUSE = 30.0
+    # On a timeout or a busy answer (429/502/503/504) the same mirror is retried after these pauses
+    # (plus up to 25% jitter) before moving to the next mirror.
+    BACKOFF = (2.0, 5.0, 12.0)
+    RETRY_STATUS = frozenset({429, 502, 503, 504})
+    MAX_RETRY_AFTER = 60.0
+    QUERY_TIMEOUT = 60          # the [timeout:] inside the query ...
+    HTTP_TIMEOUT = 70           # ... and the HTTP wait: always a little longer, never shorter
+    MAX_CONCURRENT = 2          # the public mirrors are donated; never more than two requests at once
+    _gate = threading.BoundedSemaphore(2)
 
-    def __init__(self, max_places: int = 40, pause: float = 2.0,
-                 radius_km: float = 25.0):
+    def __init__(self, max_places: int = 100, pause: float = 2.0,
+                 radius_km: float = 25.0, mirrors: list[str] | None = None,
+                 tile_km: float = 25.0, post=None, sleep=None, deadline: float | None = None):
         self.max_places = int(max_places)
         self.pause = float(pause)
         self.radius_km = float(radius_km)
+        self.mirrors = list(mirrors or self.MIRRORS)
+        self.tile_km = max(5.0, float(tile_km))
+        self._post = post or requests.post
+        self._sleep = sleep or time.sleep
+        self.deadline = deadline            # time.monotonic() value after which no new request starts
         self._last_call = 0.0
+        self.failures: list[dict] = []      # {"type", "area", "error"} for every search that failed
+        self.requests_made = 0
 
     @staticmethod
     def _bbox(lat: float, lng: float, km: float):
@@ -201,9 +230,9 @@ class OverpassSource:
             time.sleep(wait)
         self._last_call = time.time()
 
-    def _query(self, niche: str, city: dict) -> str:
+    def _query(self, niche: str, city: dict, km: float | None = None) -> str:
         from .osm_tags import tags_for
-        s_, w_, n_, e_ = self._bbox(city["lat"], city["lng"], self.radius_km)
+        s_, w_, n_, e_ = self._bbox(city["lat"], city["lng"], km if km is not None else self.radius_km)
         bbox = f"{s_:.5f},{w_:.5f},{n_:.5f},{e_:.5f}"
         parts = []
         for tag in tags_for(niche):
@@ -212,7 +241,7 @@ class OverpassSource:
         body = "\n".join(parts)
         # "out center tags" gives one point per feature plus its tags.
         return (
-            f"[out:json][timeout:90];\n(\n{body}\n);\n"
+            f"[out:json][timeout:{self.QUERY_TIMEOUT}];\n(\n{body}\n);\n"
             f"out center tags {self.max_places};"
         )
 
@@ -275,28 +304,84 @@ class OverpassSource:
             ))
         return out
 
-    def search(self, niche: str, city: dict) -> list["Business"]:
-        q = self._query(niche, city)
-        last_err = None
-        for attempt in range(2):
-            if attempt:
-                time.sleep(self.RETRY_PAUSE)
-            for url in self.MIRRORS:
+    def _tiles(self, city: dict) -> list[tuple[float, float, float]]:
+        """Centres (lat, lng, half-side km) of the smaller squares a large area is split into."""
+        import math
+        side = 2 * self.radius_km
+        n = max(1, min(4, math.ceil(side / self.tile_km)))     # at most 4 x 4 = 16 queries per type
+        half = side / n / 2
+        out = []
+        for i in range(n):
+            for j in range(n):
+                dy = -self.radius_km + half + i * 2 * half
+                dx = -self.radius_km + half + j * 2 * half
+                lat = city["lat"] + dy / 111.0
+                lng = city["lng"] + dx / (111.0 * max(math.cos(math.radians(city["lat"])), 0.01))
+                out.append((lat, lng, half))
+        return out
+
+    def _request(self, q: str) -> dict:
+        """One query, across the mirrors, with retries. Returns the JSON or raises SearchFailed."""
+        last = "no mirror tried"
+        for url in self.mirrors:
+            for attempt in range(len(self.BACKOFF) + 1):
+                if self.deadline is not None and time.monotonic() >= self.deadline:
+                    raise DeadlineReached("run time limit reached")
                 self._throttle()
+                wait = None
                 try:
-                    r = requests.post(
-                        url, data={"data": q}, timeout=120,
-                        headers={"User-Agent": (
-                            "WebiGeeksLeadAgent/1.0 (contact: "
-                            "rohan@webigeeksdigital.com)")},
-                    )
+                    with self._gate:
+                        self.requests_made += 1
+                        r = self._post(url, data={"data": q}, timeout=self.HTTP_TIMEOUT,
+                                       headers={"User-Agent": USER_AGENT})
                     if r.status_code == 200:
-                        return self.parse(r.json(), niche, city)
-                    # 429/504 mean the instance is busy - try the next mirror.
-                    last_err = f"{url} -> HTTP {r.status_code}"
+                        try:
+                            return r.json()
+                        except ValueError:
+                            last = "mirror answered with something that is not JSON"
+                            break                      # a broken mirror: next one
+                    last = f"HTTP {r.status_code}"
+                    if r.status_code not in self.RETRY_STATUS:
+                        break                          # e.g. 400/403: retrying will not help
+                    ra = (getattr(r, "headers", None) or {}).get("Retry-After")
+                    if ra:
+                        try:
+                            wait = min(float(ra), self.MAX_RETRY_AFTER)
+                        except ValueError:
+                            wait = None
+                except requests.Timeout:
+                    last = "timeout"
                 except requests.RequestException as ex:
-                    last_err = f"{url} -> {type(ex).__name__}"
-        raise RuntimeError(f"all Overpass mirrors failed twice ({last_err})")
+                    last = type(ex).__name__
+                    break
+                if attempt < len(self.BACKOFF):
+                    base = self.BACKOFF[attempt]
+                    self._sleep(max(wait, 0.0) if wait is not None else base + random.uniform(0, base * 0.25))
+        raise SearchFailed(last)
+
+    def search(self, niche: str, city: dict) -> list["Business"]:
+        """All businesses of one type around one area. Raises SearchFailed when EVERY part failed."""
+        merged: dict[str, "Business"] = {}
+        ok = 0
+        last = ""
+        tiles = self._tiles(city)
+        for lat, lng, half in tiles:
+            q = self._query(niche, {"lat": lat, "lng": lng}, half)
+            try:
+                payload = self._request(q)
+            except SearchFailed as ex:
+                last = str(ex)
+                continue
+            ok += 1
+            for b in self.parse(payload, niche, city):
+                merged.setdefault(b.source_id, b)
+        if ok == 0:
+            self.failures.append({"type": niche, "area": city.get("name", ""), "error": last})
+            raise SearchFailed(last)
+        if ok < len(tiles):
+            self.failures.append({"type": niche, "area": city.get("name", ""),
+                                  "error": f"{len(tiles) - ok} of {len(tiles)} parts failed: {last}"})
+        return list(merged.values())
 
 
 # --------------------------------------------------------------------
@@ -305,9 +390,12 @@ class OverpassSource:
 class OvertureSource:
     """Query Overture's public GeoParquet with DuckDB over a bbox."""
 
-    def __init__(self, release: str = "2026-08-19.0", max_places: int = 20):
+    def __init__(self, release: str = "2026-08-19.0", max_places: int = 100, cache_dir: str | None = None,
+                 query=None):
         self.release = release
         self.max_places = int(max_places)
+        self.cache_dir = cache_dir          # open data only (Overture's licence allows keeping it)
+        self._query_fn = query              # injected in tests so nothing is downloaded
         self._con = None
 
     def _con_get(self):
@@ -322,11 +410,36 @@ class OvertureSource:
 
     @staticmethod
     def _bbox(lat: float, lng: float, km: float = 35.0):
+        import math
         dlat = km / 111.0
-        dlng = km / 85.0
+        dlng = km / (111.0 * max(math.cos(math.radians(lat)), 0.01))
         return lng - dlng, lat - dlat, lng + dlng, lat + dlat
 
+    def _cache_path(self, niche: str, city: dict):
+        import hashlib
+        from pathlib import Path
+        key = f'{self.release}|{niche.lower()}|{round(city["lat"], 2)}|{round(city["lng"], 2)}|{self.max_places}'
+        return Path(self.cache_dir) / (hashlib.sha1(key.encode()).hexdigest()[:20] + ".json")
+
     def search(self, niche: str, city: dict) -> list[Business]:
+        """Rows for one niche around one area. Repeat runs read the cache instead of the network."""
+        import json
+        path = self._cache_path(niche, city) if self.cache_dir else None
+        if path is not None and path.exists():
+            try:
+                return self._to_businesses(json.loads(path.read_text(encoding="utf-8")), niche, city)
+            except (ValueError, OSError):
+                pass                                    # a damaged cache file is just a miss
+        rows = (self._query_fn or self._query_rows)(niche, city)
+        if path is not None:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(rows), encoding="utf-8")
+            except OSError:
+                pass
+        return self._to_businesses(rows, niche, city)
+
+    def _query_rows(self, niche: str, city: dict) -> list[dict]:
         con = self._con_get()
         xmin, ymin, xmax, ymax = self._bbox(city["lat"], city["lng"])
         path = (
@@ -363,9 +476,12 @@ class OvertureSource:
         """
         rows = con.execute(sql, params).fetchall()
         cols = [c[0] for c in con.description]
+        return [dict(zip(cols, row)) for row in rows]
+
+    @staticmethod
+    def _to_businesses(rows: list[dict], niche: str, city: dict) -> list[Business]:
         out = []
-        for row in rows:
-            d = dict(zip(cols, row))
+        for d in rows:
             addr = ", ".join(
                 x for x in (d.get("street"), d.get("locality"), d.get("region")) if x
             )
@@ -406,10 +522,12 @@ def build_source(cfg: dict):
             max_places=mx,
             pause=o.get("pause_seconds", 2.0),
             radius_km=o.get("radius_km", 25.0),
+            mirrors=o.get("mirrors") or None,
+            tile_km=o.get("tile_km", 25.0),
         )
 
     if kind == "overture":
-        return OvertureSource(cfg.get("overture_release", "2026-08-19.0"), mx)
+        return build_overture(cfg)
 
     if kind == "google":
         key = os.environ.get(
@@ -420,6 +538,12 @@ def build_source(cfg: dict):
         f'Unknown source "{kind}". Use "osm" (free, no setup), '
         '"overture" (free, better coverage) or "google" (needs billing).'
     )
+
+
+def build_overture(cfg: dict) -> "OvertureSource":
+    o = cfg.get("overture") or {}
+    return OvertureSource(cfg.get("overture_release", "2026-08-19.0"), o.get("max_places", 100),
+                          cache_dir=o.get("cache_dir", "cache/overture"))
 
 
 def check_source(cfg: dict) -> int:
