@@ -20,3 +20,15 @@ crm/data/*.db
 crm/data/*.db-*
 crm/node_modules/
 out/mockups/
+
+# Never commit secrets or lead data (this repository is PUBLIC)
+.env*
+!.env.example
+*.csv
+*.pem
+*.key
+data/
+!data/.gitkeep
+out/
+!out/.gitkeep
+cache/

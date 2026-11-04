@@ -26,9 +26,23 @@
 #            for you. It is the only source with review counts.
 source: "osm"
 
+# Sources are tried in this order: Google Places (only inside the shared call budget kept by the CRM
+# backend), Overture Maps, then OpenStreetMap. Results are merged and de-duplicated in memory.
+# Google data is used in memory only; the CRM stores just the place_id (see docs/COMPLIANCE.md).
+discovery: ["google", "overture", "overpass"]
+
 overpass:
   pause_seconds: 2.0     # be polite to donated public infrastructure
   radius_km: 25.0        # search radius around each city centre
+  tile_km: 25.0          # areas wider than this are split into smaller queries
+  mirrors:               # tried in order; busy answers are retried with backoff before moving on
+    - https://overpass-api.de/api/interpreter
+    - https://overpass.kumi.systems/api/interpreter
+    - https://overpass.private.coffee/api/interpreter
+
+overture:
+  max_places: 100
+  cache_dir: cache/overture   # open data only; cached between runs by the workflow
 
 overture_release: "2026-08-19.0"
 google_api_key_env: "GOOGLE_MAPS_API_KEY"
@@ -178,7 +192,7 @@ niches:
 # Overpass is donated infrastructure, so keep runs modest and the
 # pause above in place. 20 queries x 40 results = plenty per day.
 queries_per_run: 45   # ~28 min; 35 cities x 12 clinic types = 420 searches to rotate through
-max_places_per_query: 40
+max_places_per_query: 100
 
 # ---- WEBSITE AUDIT -----------------------------------------
 website_audit:
@@ -216,7 +230,7 @@ quality_filters:
   chain_min_locations: 3
   skip_branded: true             # skip anything OpenStreetMap tags with a brand
   chain_names: []                # add your own, e.g. ["Smiles Dental Group"]
-  require_phone: true            # a no-website lead can only be reached by phone
+  # Records with no phone are KEPT and marked phone_status = "missing" (they are no longer dropped).
   infer_website_from_email: true # info@theirclinic.ca means theirclinic.ca exists: audit it instead
   free_email_domains: []         # extra mailbox providers to ignore
 
@@ -229,14 +243,11 @@ quality_filters:
 # quota in the Google Cloud console, which is the cap Google itself enforces.
 google_verify:
   enabled: true
-  monthly_call_cap: 450          # keep at or below 1000 to stay inside the free allowance
-  max_per_run: 15                # lookups per morning
+  max_per_run: 15                # lookups per run, taken from the SAME backend budget as discovery
   min_name_similarity: 0.6
   max_distance_m: 400
   no_match_penalty: 20           # score taken off when Google has no matching listing
-  # Google lets you store place IDs, not its other content. false = keep only google_place_id and
-  # google_status; Google's website, rating and review count are used then discarded.
-  keep_google_fields: false
+  # Google's terms allow keeping a place_id and nothing else, so nothing else is ever kept.
 
 # ---- SCORING ------------------------------------------------
 # Higher opportunity_score = better lead for you.
@@ -318,4 +329,4 @@ output:
   dir: "out"
   keep_days: 30
   write_csv: true
-  write_html: true
+  write_html: false   # the run log and artifacts are public: no lead data is written for display

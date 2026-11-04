@@ -1,18 +1,18 @@
 # Finds leads for the WebiGeeks Digital CRM.
 #
-# Two ways it starts:
+# Two ways it starts - and ONLY these two (no pull_request, no issue_comment, nothing an outsider can fire):
 #   - By hand: the CRM's "Fetch new leads" button (or "Run workflow" on GitHub). Always runs.
 #   - By the clock (the two crons below): runs ONLY if the CRM says automatic fetching is on
 #     and that market's country is enabled. Both are off by default, so by default the clock
 #     starts this workflow, sees "off" in the gate step and stops after a few seconds.
 #
-# The CRM owner switches these in the Fetch panel (Fetch settings). The gate fails closed: if the
-# CRM cannot be reached, the scheduled run is skipped.
+# THIS REPOSITORY IS PUBLIC. Anyone can read the code, the workflow runs and their logs. So:
+#   - the log prints counts only (see leadagent/safelog.py); no names, phones, URLs, ids or keys;
+#   - no artifact is uploaded and no cache holds lead data (only Python packages and Overture's open data);
+#   - the CRM address, the ingest token and the Google key live in GitHub Secrets;
+#   - the token has the minimum permission (contents: read).
 #
-# Setup:
-#   1. Push this folder to a GitHub repo (private is fine).
-#   2. Actions tab -> enable workflows.
-#   3. Add the CRM_URL variable and CRM_INGEST_TOKEN secret (see README).
+# Setup: see docs/COST_SAFETY.md.
 name: Lead run (US and Canada)
 
 on:
@@ -30,7 +30,7 @@ on:
         required: false
         default: "ca"
       area:
-        description: "Optional: search one area (city, suburb or postal code) instead of the usual cities"
+        description: "Optional: search one area (city, suburb or postal code) instead of the national queue"
         required: false
         default: ""
       radius_km:
@@ -46,15 +46,22 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: read
+
+# One run per market at a time: a second click or a stuck run cannot pile up and use up runner time.
+concurrency:
+  group: lead-run-${{ inputs.market || (github.event.schedule == '30 2 * * *' && 'us') || 'ca' }}
+  cancel-in-progress: false
+
 jobs:
   hunt:
     runs-on: ubuntu-latest
+    timeout-minutes: 45          # the agent stops itself at 40 and posts what it has
     env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      CRM_URL: ${{ vars.CRM_URL }}
+      CRM_URL: ${{ secrets.CRM_URL || vars.CRM_URL }}
       CRM_INGEST_TOKEN: ${{ secrets.CRM_INGEST_TOKEN }}
       CRM_RUN_ID: ${{ inputs.crm_run_id }}
-      # Optional. Only used when google_verify.enabled is true in the config; empty means the Google check is skipped.
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
       # The 10:00 UTC schedule is "ca"; a run started by hand says which market it wants (default Canada).
       MARKET: ${{ inputs.market || (github.event.schedule == '30 2 * * *' && 'us') || 'ca' }}
@@ -67,10 +74,13 @@ jobs:
       FETCH_MIN_SCORE: ${{ inputs.min_score }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       # Scheduled runs stop here unless the CRM has automatic fetching switched on.
       - name: Should this run?
@@ -81,62 +91,33 @@ jobs:
         if: steps.gate.outputs.proceed == 'true'
         run: pip install -r requirements.txt
 
-      # Keep the ledger between runs so you never see the same lead twice.
-      - name: Restore lead ledger
+      # Overture's open data, kept between runs so a repeat run is fast. This is the ONLY lead-related
+      # cache: it holds public open data, never Google data and never lead rows.
+      - name: Restore Overture open data
         if: steps.gate.outputs.proceed == 'true'
         uses: actions/cache@v4
         with:
-          path: data
-          key: lead-ledger-${{ env.MARKET }}-${{ github.run_id }}
-          # The second line picks up the ledger saved before runs were split by market.
+          path: cache/overture
+          key: overture-${{ hashFiles('config-ca.yaml', 'config.yaml') }}-${{ github.run_id }}
           restore-keys: |
-            lead-ledger-${{ env.MARKET }}-
-            lead-ledger-
-
-      # Mockups accumulate here so links sent on earlier days keep working.
-      - name: Restore mockup site
-        if: steps.gate.outputs.proceed == 'true'
-        uses: actions/cache@v4
-        with:
-          path: out/mockups
-          key: mockups-${{ github.run_id }}
-          restore-keys: mockups-
+            overture-${{ hashFiles('config-ca.yaml', 'config.yaml') }}-
 
       - name: Hunt
         if: steps.gate.outputs.proceed == 'true'
         run: |
           set -euo pipefail
           if [ "$MARKET" = "ca" ]; then CONFIG=config-ca.yaml; else CONFIG=config.yaml; fi
-          args=(--config "$CONFIG")
+          args=(--config "$CONFIG" --time-limit-min 40)
           [ -n "$FETCH_AREA" ]      && args+=(--area "$FETCH_AREA")
           [ -n "$FETCH_RADIUS_KM" ] && args+=(--radius-km "$FETCH_RADIUS_KM")
           [ -n "$FETCH_NICHES" ]    && args+=(--niches "$FETCH_NICHES")
           [ -n "$FETCH_MIN_SCORE" ] && args+=(--min-score "$FETCH_MIN_SCORE")
           python3 run.py "${args[@]}"
 
-      # Publishes out/mockups to demo.webigeeksdigital.com (Vercel project
-      # "webigeeks-demo"). Skipped until the three secrets below exist.
-      - name: Publish mockups
-        # US only: a Canadian run builds no static mockups and must not overwrite the site.
-        if: ${{ steps.gate.outputs.proceed == 'true' && env.VERCEL_TOKEN != '' && env.MARKET == 'us' }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: npx --yes vercel@latest deploy out/mockups --prod --yes --token="$VERCEL_TOKEN"
-
-      - uses: actions/upload-artifact@v4
-        if: steps.gate.outputs.proceed == 'true'
-        with:
-          name: leads-${{ env.MARKET }}-${{ github.run_number }}
-          path: out/
-          retention-days: 30
-
-      # Sends the new leads to the WebiGeeks Digital CRM. Skipped until the
-      # CRM_URL variable and CRM_INGEST_TOKEN secret exist.
+      # Sends the new leads to the WebiGeeks Digital CRM. If the CRM cannot be reached the step FAILS
+      # (a green run must never hide leads that were not delivered) and the next step tells the CRM.
       - name: Send results to the CRM
         if: steps.gate.outputs.proceed == 'true'
-        # A CRM outage must not fail the lead run; the CSV artifact above is the fallback.
-        continue-on-error: true
         run: python3 scripts/push_to_crm.py
 
       - name: Tell the CRM the run failed
