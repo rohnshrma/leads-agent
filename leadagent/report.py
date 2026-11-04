@@ -81,9 +81,11 @@ def write_csv(rows: list[dict], path: Path) -> None:
     if not rows:
         path.write_text("no new leads this run\n")
         return
-    cols = list(rows[0].keys())
+    cols: list[str] = []
+    for r in rows:                       # rows from different sources carry different columns
+        cols.extend(k for k in r if k not in cols)
     with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
+        w = csv.DictWriter(f, fieldnames=cols, restval="")
         w.writeheader()
         w.writerows(rows)
 
@@ -111,8 +113,6 @@ def write_html(businesses: list, path: Path, meta: dict) -> None:
                            f'<span class="mut">(call - best channel)</span>')
         else:
             contact.append('<span class="mut">No phone listed</span>')
-        if a.get("emails_found"):
-            contact.append(f'Email found: <b>{e(a["emails_found"])}</b>')
         if b.website:
             contact.append(f'Listed site: <a href="{e(b.website)}" '
                            f'target="_blank" rel="noopener">{e(b.website[:70])}</a>')
