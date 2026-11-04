@@ -45,6 +45,10 @@ on:
         description: "Optional: only report leads scoring at least this (0-100)"
         required: false
         default: ""
+      provinces:
+        description: "Set by the CRM for All of Canada (which provinces); the CRM itself decides what the queue hands out"
+        required: false
+        default: ""
 
 permissions:
   contents: read
