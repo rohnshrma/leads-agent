@@ -28,16 +28,14 @@ from urllib.parse import urlparse
 
 import requests
 
+from . import safeurl
+
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"
 )
 
-EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
-JUNK_EMAIL = re.compile(
-    r"(sentry|wixpress|example\.|@\d|\.png|\.jpg|\.gif|godaddy|cloudflare"
-    r"|domain\.com|email@|your@|name@)", re.I
-)
+# Email addresses are never collected from web pages (CASL): no pattern, no helper, no contact-page crawl.
 COPYRIGHT_RE = re.compile(r"(?:©|&copy;|copyright)[^0-9]{0,20}(20\d{2})", re.I)
 CONSTRUCTION_RE = re.compile(
     r"(under construction|coming soon|site is being (built|updated)"
@@ -58,8 +56,6 @@ PLATFORMS = [
     ("Joomla", r"/media/jui/|joomla"),
     ("Drupal", r"drupal-settings-json|/sites/default/files"),
 ]
-
-CONTACT_PATHS = ("/contact", "/contact-us", "/about", "/about-us", "/contact.html")
 
 
 def _norm_url(url: str) -> str:
@@ -85,17 +81,6 @@ def is_social_only(url: str, social_domains: list[str]) -> bool:
     return any(h == d or h.endswith("." + d) for d in social_domains)
 
 
-def harvest_emails(html: str) -> list[str]:
-    found = []
-    for m in EMAIL_RE.findall(html or ""):
-        if JUNK_EMAIL.search(m):
-            continue
-        m = m.strip(".,;:")
-        if m.lower() not in [f.lower() for f in found]:
-            found.append(m)
-    return found[:4]
-
-
 def audit_site(url: str, cfg: dict) -> dict:
     """Fetch a site once and report everything we can measure."""
     wcfg = cfg.get("website_audit", {}) or {}
@@ -107,14 +92,14 @@ def audit_site(url: str, cfg: dict) -> dict:
         "load_seconds": None, "https": False, "mobile_friendly": None,
         "platform": "", "page_kb": None, "title": "",
         "has_meta_description": None, "copyright_year": None,
-        "emails_found": "", "verdict": "",
+        "verdict": "",
     }
 
     if not url:
         res["verdict"] = "NO_WEBSITE"
         return res
 
-    if is_social_only(url, social):
+    if is_social_only(url, social) or safeurl.is_never_fetch(url):
         res["verdict"] = "SOCIAL_ONLY"
         res["platform"] = _host(url)
         return res
@@ -127,11 +112,11 @@ def audit_site(url: str, cfg: dict) -> dict:
     # so a timeout or dropped connection gets a second try with a longer wait before the verdict.
     for attempt in range(2):
         try:
-            r = requests.get(
-                target, timeout=timeout * (1 if attempt == 0 else 1.75), allow_redirects=True,
-                headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"},
-            )
+            r = safeurl.safe_get(target, timeout=timeout * (1 if attempt == 0 else 1.75))
             err = None
+            break
+        except safeurl.FetchRefused as e:           # private address, bad redirect: not a real website
+            err = e
             break
         except (requests.RequestException, socket.error) as e:
             err = e
@@ -188,22 +173,6 @@ def audit_site(url: str, cfg: dict) -> dict:
     if CONSTRUCTION_RE.search(body_text[:6000]) or len(body_text.strip()) < 350:
         res["verdict"] = "UNDER_CONSTRUCTION"
         return res
-
-    # Email harvest: homepage, then a contact/about page.
-    emails = harvest_emails(html)
-    if not emails:
-        base = f"{urlparse(r.url).scheme}://{urlparse(r.url).netloc}"
-        for path in CONTACT_PATHS:
-            try:
-                r2 = requests.get(base + path, timeout=timeout,
-                                  headers={"User-Agent": UA})
-                if r2.status_code == 200:
-                    emails = harvest_emails(r2.text)
-                    if emails:
-                        break
-            except requests.RequestException:
-                continue
-    res["emails_found"] = ", ".join(emails)
 
     weak = (
         not res["https"] or not res["mobile_friendly"]
@@ -295,15 +264,11 @@ def score(biz, cfg: dict) -> None:
         #   2. How many datasets agreed the place exists (Overture conflates
         #      Meta + Microsoft; agreement means it is real and current).
         #   3. Overture's own confidence score.
-        if biz.phone:
+        if biz.phone or getattr(biz, "phone_status", "") == "google_live":
             pts += s.get("has_phone_points", 14)
-            why.append("Phone number listed - reachable today")
+            why.append("Phone number available - reachable today")
         else:
-            pts -= s.get("no_phone_penalty", 25)
-            why.append("No phone listed - hard to reach, deprioritise")
-        if biz.email:
-            pts += s.get("has_email_points", 6)
-            why.append("Email listed in the map data")
+            why.append("No phone yet - we look for one, and it stays out of the call queue until found")
         if (biz.source_count or 0) >= 2:
             pts += s.get("multi_source_points", 8)
             why.append(f"Confirmed by {biz.source_count} datasets - real business")

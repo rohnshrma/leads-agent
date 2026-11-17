@@ -7,7 +7,8 @@ The free map data (OpenStreetMap) produces three kinds of lead nobody can sell t
     fifteen sites). Their website is run by head office, so there is nothing to sell.
   * "No website" that is really "nobody typed the website into the map". A business
     whose email is on its own domain (info@theirclinic.ca) almost always has a site.
-  * Records with no phone number. A no-website business can only be reached by phone.
+  * Records with no phone number. These are no longer dropped: they are kept, marked
+    phone_status = "missing", and enriched (see enrich.py).
 
 Each filter is switchable in config (quality_filters:) and none of them needs a key.
 """
@@ -109,7 +110,8 @@ def digits(phone: str) -> str:
 
 
 def has_phone(b) -> bool:
-    return len(digits(b.phone)) >= 10
+    from .phones import normalize_e164
+    return bool(normalize_e164(b.phone))
 
 
 def chain_reason(b, chain_names: list[str], multi_keys: set[str], skip_branded: bool) -> str:
@@ -132,7 +134,7 @@ def apply(found: list, fresh: list, cfg: dict) -> tuple[list, dict]:
     Returns (kept, report) where report counts what was dropped and what was inferred.
     """
     q = cfg.get("quality_filters") or {}
-    report = {"chains": 0, "no_phone": 0, "website_inferred": 0, "dropped_names": []}
+    report = {"chains": 0, "phone_missing": 0, "website_inferred": 0, "dropped_names": []}
     if not q.get("enabled", True):
         return fresh, report
 
@@ -150,9 +152,14 @@ def apply(found: list, fresh: list, cfg: dict) -> tuple[list, dict]:
                 report["chains"] += 1
                 report["dropped_names"].append(f"{b.name} ({why})")
                 continue
-        if q.get("require_phone", True) and not has_phone(b):
-            report["no_phone"] += 1
-            continue
+        # A lead with no phone is KEPT and marked. enrich.py then tries to find a number, and the CRM
+        # keeps the lead out of the call queue until one exists. (This used to drop the row.)
+        if has_phone(b):
+            from .phones import normalize_e164
+            b.phone, b.phone_status = normalize_e164(b.phone), "found"
+        else:
+            b.phone, b.phone_status = "", "missing"
+            report["phone_missing"] += 1
         if q.get("infer_website_from_email", True) and not b.website:
             dom = own_domain(b.email, free)
             if dom:

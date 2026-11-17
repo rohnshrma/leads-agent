@@ -1,28 +1,22 @@
 """
-Optional Google Places check for the best candidates. OFF unless you turn it on.
+Optional Google Places check of the best candidates, sharing the discovery call budget.
 
-The free map data cannot tell whether a business has a website the map lacks, whether it has closed,
-or whether anyone uses it. Google can. This module looks up each top candidate once and then:
+The free map data cannot tell whether a business has a website the map lacks, whether it has closed, or
+whether it is a real, operating place. Google can. For each top candidate this module does one Text
+Search and then:
 
   * drops it when Google says the business is closed;
   * re-grades it when Google lists a real website (so a false "NO WEBSITE" is not reported);
   * marks it "not found on Google" (score penalty) when no listing matches name and place;
-  * adds a score bonus from Google's review count and rating when it is verified and has no site.
+  * remembers the place_id, and - for a lead with no phone - that Google has one (phone_status
+    "google_live": the CRM shows it live from Google; it is never stored).
 
-It runs only when BOTH are true:
-  1. google_verify.enabled: true in the config, and
-  2. the API key is in the environment variable named by google_api_key_env.
+Google's terms allow keeping a place_id and nothing else. Everything else Google says is used to decide
+and then dropped from memory. There is no switch to keep it.
 
-Money guard-rails (Text Search with phone/website/rating is Google's "Enterprise" SKU: the first 1,000
-requests a month are free, then $35 per 1,000):
-  * monthly_call_cap (default 900) is counted in the ledger database and never exceeded;
-  * max_per_run (default 40) limits one morning's run;
-  * also set a daily quota in the Google Cloud console - that is the cap Google itself enforces.
-
-Licence: Google lets you store place IDs indefinitely but not its other content. So by default only the
-place ID and a status are kept (google_place_id, google_status). Google's website, phone, rating and
-review count are used to decide, then discarded. Set keep_google_fields: true only if you have checked
-Google's current terms and accept that.
+Money: every request first reserves a call from the SAME backend budget as discovery (budget.py), so the
+check and discovery together can never pass the daily or monthly cap. A refusal stops the check cleanly.
+`max_per_run` additionally limits one run.
 """
 
 from __future__ import annotations
@@ -30,56 +24,19 @@ from __future__ import annotations
 import math
 import os
 import re
-import sqlite3
-from datetime import datetime
 from difflib import SequenceMatcher
 
 import requests
 
 from . import audit, quality
+from .budget import Budget, KIND_TEXT_SEARCH
+from .google_places import ENDPOINT, FIELD_MASK
 
-ENDPOINT = "https://places.googleapis.com/v1/places:searchText"
-FIELD_MASK = ",".join([
-    "places.id", "places.displayName", "places.formattedAddress", "places.location",
-    "places.businessStatus", "places.websiteUri", "places.nationalPhoneNumber",
-    "places.rating", "places.userRatingCount",
-])
 CHECKED_TYPES = {"NO WEBSITE", "BROKEN SITE", "SOCIAL ONLY", "PLACEHOLDER"}
-FREE_MONTHLY_ENTERPRISE_CALLS = 1000
-
-
-class UsageMeter:
-    """Counts Google requests per calendar month in the ledger's SQLite database."""
-
-    def __init__(self, con: sqlite3.Connection):
-        self.con = con
-        self.con.execute("CREATE TABLE IF NOT EXISTS google_usage (month TEXT PRIMARY KEY, calls INTEGER)")
-        self.con.commit()
-
-    @staticmethod
-    def month() -> str:
-        return datetime.now().strftime("%Y-%m")
-
-    def used(self) -> int:
-        row = self.con.execute("SELECT calls FROM google_usage WHERE month=?", (self.month(),)).fetchone()
-        return int(row[0]) if row else 0
-
-    def add(self, n: int = 1) -> None:
-        self.con.execute(
-            "INSERT INTO google_usage (month, calls) VALUES (?, ?) "
-            "ON CONFLICT(month) DO UPDATE SET calls = calls + excluded.calls", (self.month(), n))
-        self.con.commit()
 
 
 def _alnum(s: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", (s or "").lower()))
-
-
-def _scrub(reason: str) -> str:
-    """Remove Google's numbers (review count, rating) from a score reason so they are not stored."""
-    reason = re.sub(r"\(\d+ Google reviews\)", "(strong on Google)", reason)
-    reason = re.sub(r"\(\d+(\.\d+)?\*\)", "(on Google)", reason)
-    return re.sub(r"only \d+ reviews", "only a few reviews", reason)
 
 
 def name_similarity(a: str, b: str) -> float:
@@ -101,30 +58,35 @@ def distance_m(lat1, lng1, lat2, lng2) -> float:
 
 
 class GoogleVerifier:
-    def __init__(self, cfg: dict, api_key: str, meter: UsageMeter):
+    def __init__(self, cfg: dict, api_key: str, budget: Budget, post=None):
         g = cfg.get("google_verify") or {}
         self.cfg = cfg
         self.api_key = api_key
-        self.meter = meter
-        self.cap = int(g.get("monthly_call_cap", 900))
-        self.per_run = int(g.get("max_per_run", 40))
+        self.budget = budget
+        self._post = post or requests.post
+        self.per_run = int(g.get("max_per_run", 15))
         self.min_sim = float(g.get("min_name_similarity", 0.6))
         self.max_dist = float(g.get("max_distance_m", 400))
-        self.keep = bool(g.get("keep_google_fields", False))
         self.penalty = int(g.get("no_match_penalty", 20))
-        self.region = (cfg.get("country") or "US").upper()
+        self.region = (cfg.get("country") or "CA").upper()
         self.calls_this_run = 0
-        self.stopped = ""          # why checking stopped early (bad key, quota...), if it did
-        self.social = [d.lower() for d in (cfg.get("website_audit", {}) or {}).get("social_only_domains", [])]
+        self.stopped = ""          # why checking stopped early (bad key, quota, budget...), if it did
+        self.budget_reached = False
 
     # ---- budget ---------------------------------------------------------------------------
     def remaining(self) -> int:
         if self.stopped:
             return 0
-        return max(0, min(self.per_run - self.calls_this_run, self.cap - self.meter.used()))
+        return max(0, self.per_run - self.calls_this_run)
 
     # ---- the one billable call ----------------------------------------------------------------
     def search(self, b) -> list[dict]:
+        if self.stopped:
+            raise RuntimeError(self.stopped)
+        if not self.budget.reserve(KIND_TEXT_SEARCH):               # reserve BEFORE sending
+            self.budget_reached = True
+            self.stopped = f"call budget reached ({self.budget.refused_reason or 'cap'})"
+            raise RuntimeError(self.stopped)
         body = {
             "textQuery": f"{b.name} {b.address or b.city_query}".strip(),
             "pageSize": 3,
@@ -132,15 +94,15 @@ class GoogleVerifier:
         }
         if b.lat is not None and b.lng is not None:
             body["locationBias"] = {"circle": {"center": {"latitude": b.lat, "longitude": b.lng}, "radius": 1000.0}}
-        self.meter.add(1)                      # count before sending: a failed call may still be billed
         self.calls_this_run += 1
-        r = requests.post(
-            ENDPOINT, json=body, timeout=30,
+        import json
+        r = self._post(
+            ENDPOINT, data=json.dumps(body), timeout=30,
             headers={"Content-Type": "application/json", "X-Goog-Api-Key": self.api_key,
                      "X-Goog-FieldMask": FIELD_MASK},
         )
         if r.status_code in (400, 401, 403, 429):
-            self.stopped = f"Google answered HTTP {r.status_code}: {r.text[:160]}"
+            self.stopped = f"Google answered HTTP {r.status_code}"      # no body: it can echo the request
             raise RuntimeError(self.stopped)
         if r.status_code != 200:
             raise RuntimeError(f"Google answered HTTP {r.status_code}")
@@ -170,9 +132,8 @@ class GoogleVerifier:
         """Look one business up and update it. Returns the outcome label."""
         try:
             places = self.search(b)
-        except Exception as ex:                     # network trouble or a stop condition
+        except Exception:                                    # network trouble or a stop condition
             b.google_status = "error"
-            print(f"  ! Google check failed for {b.name}: {ex}")
             return "error"
         p = self.best_match(b, places)
         if p is None:
@@ -182,38 +143,38 @@ class GoogleVerifier:
             return "no_match"
 
         b.google_status = "matched"
-        b.google_place_id = p.get("id", "")
+        b.google_place_id = p.get("id", "")                 # the one Google field that may be stored
+        if not b.phone and (p.get("nationalPhoneNumber") or p.get("internationalPhoneNumber")):
+            b.phone_status = "google_live"                  # shown live in the CRM; the number is NOT kept
         status = p.get("businessStatus", "")
         if status and status != "OPERATIONAL":
             b.business_status = status
-            audit.score(b, self.cfg)               # zeroes the score and says why
+            audit.score(b, self.cfg)                         # zeroes the score and says why
             return "closed"
 
         site = (p.get("websiteUri") or "").strip()
-        if site:
+        if site and not b.website:
+            # Grade Google's website in memory; keep the verdict, never the link.
             b.audit = audit.audit_site(site, self.cfg)
-            if not self.keep:                      # Google's URL is Google content: keep the verdict, not the link
-                b.audit["listed_url"] = ""
-                b.audit["final_url"] = ""
+            b.audit["listed_url"] = ""
+            b.audit["final_url"] = ""
             audit.score(b, self.cfg)
             b.reasons.append("Google lists a website for this business (the map data lacked it)")
             return "website_found"
 
-        # Verified, operating, no website on Google: use reviews as a demand signal for the score only.
-        b.rating, b.review_count = p.get("rating"), p.get("userRatingCount")
         audit.score(b, self.cfg)
-        b.reasons.append("Verified on Google: operating, no website listed")
-        if not self.keep:
-            b.rating = b.review_count = None
-            b.reasons = [_scrub(w) for w in b.reasons]
+        b.reasons.append("Verified on Google: operating" + ("" if site else ", no website listed"))
         return "verified"
 
     def run(self, candidates: list) -> dict:
-        """Check the best candidates (already sorted best first) within today's budget."""
+        """Check the best candidates (already sorted best first) within the budget."""
         summary = {"checked": 0, "verified": 0, "no_match": 0, "closed": 0, "website_found": 0,
-                   "error": 0, "not_checked": 0}
+                   "error": 0, "not_checked": 0, "skipped_already_known": 0}
         for b in candidates:
             if b.lead_type not in CHECKED_TYPES:
+                continue
+            if b.from_google or b.google_place_id:
+                summary["skipped_already_known"] += 1         # discovery already gave phone and website
                 continue
             if self.remaining() <= 0:
                 b.google_status = "not_checked"
@@ -225,17 +186,13 @@ class GoogleVerifier:
         return summary
 
 
-def build(cfg: dict, ledger) -> GoogleVerifier | None:
-    """The verifier, or None when the check is switched off or has no key."""
+def build(cfg: dict, budget: Budget) -> GoogleVerifier | None:
+    """The verifier, or None when the check is switched off or there is no key."""
     g = cfg.get("google_verify") or {}
     if not g.get("enabled", False):
         return None
     key = os.environ.get(cfg.get("google_api_key_env", "GOOGLE_MAPS_API_KEY"), "").strip()
     if not key:
-        print("google_verify is enabled but no API key is set - skipping the Google check")
+        print("Google check skipped: no API key is set")
         return None
-    cap = int(g.get("monthly_call_cap", 900))
-    if cap > FREE_MONTHLY_ENTERPRISE_CALLS:
-        print(f"WARNING: monthly_call_cap {cap} is above Google's {FREE_MONTHLY_ENTERPRISE_CALLS} free requests; "
-              "calls beyond that are billed")
-    return GoogleVerifier(cfg, key, UsageMeter(ledger.con))
+    return GoogleVerifier(cfg, key, budget)

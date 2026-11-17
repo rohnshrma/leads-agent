@@ -12,7 +12,7 @@ from leadagent import audit, quality  # noqa: E402
 from leadagent.sources import Business  # noqa: E402
 
 
-def biz(name, phone="+1 403-555-0100", email="", website="", lat=51.0, lng=-114.0, brand="", city="Calgary, AB", sid=None):
+def biz(name, phone="+1 403-243-8114", email="", website="", lat=51.0, lng=-114.0, brand="", city="Calgary, AB", sid=None):
     return Business(source="osm", source_id=sid or f"node/{abs(hash((name, lat, lng)))}", name=name, phone=phone,
                     email=email, website=website, lat=lat, lng=lng, brand=brand, city_query=city,
                     address="", business_status="OPERATIONAL")
@@ -74,16 +74,18 @@ class ChainTests(unittest.TestCase):
 
 
 class PhoneAndEmailTests(unittest.TestCase):
-    def test_records_without_a_usable_phone_are_dropped(self):
+    def test_records_without_a_usable_phone_are_kept_and_marked(self):
         found = [biz("No Phone Clinic", phone=""), biz("Short Number", phone="555-0100"), biz("Good Clinic")]
         out, rep = quality.apply(found, found, {})
-        self.assertEqual([b.name for b in out], ["Good Clinic"])
-        self.assertEqual(rep["no_phone"], 2)
+        self.assertEqual(sorted(b.name for b in out), ["Good Clinic", "No Phone Clinic", "Short Number"])
+        self.assertEqual(rep["phone_missing"], 2)
+        status = {b.name: b.phone_status for b in out}
+        self.assertEqual(status, {"No Phone Clinic": "missing", "Short Number": "missing", "Good Clinic": "found"})
 
-    def test_phone_requirement_can_be_switched_off(self):
-        found = [biz("No Phone Clinic", phone="")]
-        out, _ = quality.apply(found, found, {"quality_filters": {"require_phone": False}})
-        self.assertEqual(len(out), 1)
+    def test_a_kept_phone_is_stored_in_e164(self):
+        found = [biz("Good Clinic", phone="(403) 243-8114 ext 5")]
+        out, _ = quality.apply(found, found, {})
+        self.assertEqual(out[0].phone, "+14032438114")
 
     def test_own_domain_email_becomes_a_website_to_audit(self):
         b = biz("Cor-Dent Dental Centre", email="info@cor-dent.com")
@@ -125,15 +127,16 @@ class SlowSiteRetryTests(unittest.TestCase):
     def test_one_timeout_is_retried_and_a_slow_site_is_not_called_broken(self):
         # the first request times out; every later one (including contact-page lookups) succeeds
         replies = [requests.Timeout()] + [FakeResponse()] * 8
-        with mock.patch("leadagent.audit.requests.get", side_effect=replies) as get, \
+        with mock.patch("leadagent.audit.safeurl.safe_get", side_effect=replies) as get, \
                 mock.patch("leadagent.audit.time.sleep"):
             res = audit.audit_site("https://slow.example", {"website_audit": {"timeout_seconds": 12}})
         self.assertNotEqual(res["verdict"], "BROKEN")
         self.assertEqual(get.call_args_list[0].kwargs["timeout"], 12)
         self.assertGreater(get.call_args_list[1].kwargs["timeout"], 12)   # second try waits longer
+        self.assertEqual(get.call_count, 2)                                # and no contact-page crawl follows
 
     def test_two_failures_are_still_broken(self):
-        with mock.patch("leadagent.audit.requests.get", side_effect=requests.ConnectionError()), \
+        with mock.patch("leadagent.audit.safeurl.safe_get", side_effect=requests.ConnectionError()), \
                 mock.patch("leadagent.audit.time.sleep"):
             res = audit.audit_site("https://dead.example", {})
         self.assertEqual(res["verdict"], "BROKEN")
