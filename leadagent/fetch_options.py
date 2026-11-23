@@ -133,8 +133,37 @@ def geocode(area: str, country: str, session=requests) -> dict:
         hits = r.json()
         lat, lng = float(hits[0]["lat"]), float(hits[0]["lon"])
     except (ValueError, KeyError, IndexError, TypeError):
-        raise OptionError(f'No place called "{area}" was found in {country.upper()}. Try the city name or a postal code.')
+        raise OptionError(f'No place called "{area}" was found in {country.upper()}. Try the city or suburb name.')
     return {"name": area, "lat": lat, "lng": lng}
+
+
+_CA_POSTAL = re.compile(r"^\s*([A-Za-z]\d[A-Za-z])(?:[\s-]*\d[A-Za-z]\d)?\s*$")
+_postal_table: dict[str, dict] | None = None
+
+
+def _postal_areas() -> dict[str, dict]:
+    """First three characters of a Canadian postal code -> centre point (bundled GeoNames table, CC BY 4.0)."""
+    global _postal_table
+    if _postal_table is None:
+        import csv
+        from pathlib import Path
+        path = Path(__file__).with_name("ca_postal_areas.csv")
+        lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if not ln.startswith("#")]
+        _postal_table = {r["fsa"]: {"lat": float(r["lat"]), "lng": float(r["lng"]), "place": r["name"]}
+                         for r in csv.DictReader(lines)}
+    return _postal_table
+
+
+def postal_area(area: str) -> dict | None:
+    """A Canadian postal code ("L6T 3Y3", "l6t3y3" or just "L6T") as {"name", "lat", "lng"}, else None.
+    The free place lookup has no Canadian postal codes, so these come from the bundled table."""
+    m = _CA_POSTAL.match(area or "")
+    if not m:
+        return None
+    hit = _postal_areas().get(m.group(1).upper())
+    if not hit:
+        raise OptionError(f'"{area}" is not a Canadian postal code we know. Check it, or type the city name.')
+    return {"name": area.strip().upper(), "lat": hit["lat"], "lng": hit["lng"]}
 
 
 def resolve_area(area: str, cfg: dict, geocoder: Callable[[str, str], dict] = geocode) -> dict:
@@ -142,6 +171,10 @@ def resolve_area(area: str, cfg: dict, geocoder: Callable[[str, str], dict] = ge
     hit = match_configured_city(area, cfg.get("cities") or [])
     if hit:
         return dict(hit)
+    if str(cfg.get("country", "")).upper() == "CA":
+        pc = postal_area(area)
+        if pc:
+            return pc
     return geocoder(area, cfg.get("country", "US"))
 
 

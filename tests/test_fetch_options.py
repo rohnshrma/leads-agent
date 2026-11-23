@@ -252,5 +252,30 @@ class OneThousandHostileInputs(unittest.TestCase):
                     pass
 
 
+class PostalCodeTests(unittest.TestCase):
+    def no_geocoder(self, *a):
+        raise AssertionError("postal codes must not need the online lookup")
+
+    def test_full_and_short_codes_are_found_offline(self):
+        cfg = {"country": "CA", "cities": []}
+        for typed in ("L6T 3Y3", "l6t3y3", "L6T-3Y3", "L6T"):
+            hit = fo.resolve_area(typed, cfg, self.no_geocoder)
+            self.assertAlmostEqual(hit["lat"], 43.69, places=1)
+            self.assertAlmostEqual(hit["lng"], -79.71, places=1)
+
+    def test_unknown_code_is_a_clear_error(self):
+        with self.assertRaises(fo.OptionError):
+            fo.resolve_area("Z9Z 9Z9", {"country": "CA", "cities": []}, self.no_geocoder)
+
+    def test_city_names_still_use_the_lookup(self):
+        hit = fo.resolve_area("Maple, ON", {"country": "CA", "cities": []},
+                              lambda a, c: {"name": a, "lat": 43.86, "lng": -79.51})
+        self.assertEqual(hit["name"], "Maple, ON")
+
+    def test_every_region_is_in_the_table(self):
+        firsts = {k[0] for k in fo._postal_areas()}
+        self.assertEqual(firsts, set("ABCEGHJKLMNPRSTVXY"))
+
+
 if __name__ == "__main__":
     unittest.main()
