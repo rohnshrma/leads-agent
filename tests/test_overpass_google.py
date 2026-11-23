@@ -238,7 +238,7 @@ def test_a_follow_up_page_repeats_every_parameter_of_the_first_request():
     g = google_places.GoogleDiscovery("k", Meter(10), post=post)
     g.search("dental clinic", {"name": "Maple, ON", "lat": 43.85, "lng": -79.51})
     first = {k: v for k, v in post.calls[0]["body"].items() if k not in ("pageToken", "pageSize")}
-    assert "locationBias" in first
+    assert "locationRestriction" in first
     for c in post.calls[1:]:
         assert {k: v for k, v in c["body"].items() if k not in ("pageToken", "pageSize")} == first
 
@@ -318,3 +318,16 @@ def test_results_are_marked_as_google_so_they_are_never_stored_whole():
     post = pager([Page([place(1)])])
     b = google_places.GoogleDiscovery("k", Meter(5), post=post).search("dental clinic", {"name": "X, ON"})[0]
     assert b.from_google and b.source == "google" and b.google_place_id == b.source_id
+
+
+def test_google_searches_inside_a_hard_box_and_drops_anything_outside_the_radius():
+    near, far = place(1), place(2)
+    far["location"] = {"latitude": 43.60, "longitude": -79.80}          # ~44 km north of the centre
+    post = pager([Page([near, far])])
+    g = google_places.GoogleDiscovery("k", Meter(10), post=post, radius_km=20)
+    got = g.search("chiropractor", {"name": "Maple, ON", "lat": 43.2, "lng": -79.8})
+    box = post.calls[0]["body"]["locationRestriction"]["rectangle"]
+    assert box["low"]["latitude"] < 43.2 < box["high"]["latitude"]
+    assert box["high"]["latitude"] - 43.2 < 0.2                         # ~20 km, not the old fixed 35 km
+    assert "locationBias" not in post.calls[0]["body"]
+    assert [b.source_id for b in got] == [near["id"]]

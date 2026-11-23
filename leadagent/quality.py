@@ -38,8 +38,16 @@ DEFAULT_CHAIN_NAMES = [
     "optimum wellness", "dentalcorp", "aspen dental", "heartland dental", "banfield",
     "vca ", "petsmart", "petco", "massage envy", "hand & stone", "hand and stone",
     "the joint", "elements massage", "orangetheory", "goodlife", "anytime fitness",
-    "planet fitness", "great clips", "sport clips",
+    "planet fitness", "great clips", "sport clips", "jack nathan", "rexall", "pharmasave",
 ]
+
+# A franchise location often has its own name but the head office's website.
+CHAIN_DOMAINS = {
+    "shoppersdrugmart.ca", "jacknathanhealth.com", "rexall.ca", "pharmasave.com", "lovelocal.ca",
+    "lifemark.ca", "cbi.ca", "pthealth.ca", "dentalcorp.ca", "lenscrafters.ca", "specsavers.ca",
+    "hakimoptical.ca", "walmart.ca", "costco.ca", "petsmart.ca", "massageenvy.com", "handandstone.ca",
+    "thejoint.com", "banfield.com", "vcacanada.com", "physiomed.com", "pearlevision.ca",
+}
 
 # Words that do not identify a business ("Smile Dental Clinic Inc." -> "smile").
 _GENERIC = {
@@ -122,6 +130,10 @@ def chain_reason(b, chain_names: list[str], multi_keys: set[str], skip_branded: 
             return f"known chain ({n.strip()})"
     if skip_branded and b.brand:
         return f"branded location ({b.brand})"
+    for site in (b.website, getattr(b, "google_site", "")):
+        host = re.sub(r"^https?://", "", (site or "").lower()).split("/")[0].removeprefix("www.")
+        if host and any(host == d or host.endswith("." + d) for d in CHAIN_DOMAINS):
+            return f"chain website ({host})"
     if normalise_name(b.name) in multi_keys:
         return "same name at several locations"
     return ""

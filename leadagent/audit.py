@@ -30,6 +30,8 @@ import requests
 
 from . import safeurl
 
+BLOCKED_STATUSES = (401, 403, 406, 429, 503)
+
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"
@@ -139,6 +141,10 @@ def audit_site(url: str, cfg: dict) -> dict:
         res["platform"] = _host(r.url)
         return res
 
+    # Access denied / rate limited / bot wall: the site may be fine for people, we just could not look.
+    if r.status_code in BLOCKED_STATUSES:
+        res["verdict"] = "BLOCKED"
+        return res
     if r.status_code >= 400:
         res["verdict"] = "BROKEN"
         return res
@@ -209,6 +215,9 @@ def score(biz, cfg: dict) -> None:
         pts += s.get("under_construction_points", 35)
         why.append("Site is a placeholder / under construction")
         biz.lead_type = "PLACEHOLDER"
+    elif verdict == "BLOCKED":
+        biz.lead_type = "UNCHECKED"
+        why.append(f"Website refused our check (HTTP {a.get('http_status')}); not graded")
     else:
         biz.lead_type = "WEAK SITE" if verdict == "WEAK" else "HAS GOOD SITE"
         if not a.get("https"):

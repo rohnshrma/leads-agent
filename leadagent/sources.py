@@ -26,6 +26,8 @@ uses different credibility signals - see audit.py.
 
 from __future__ import annotations
 
+import re
+
 import os
 import random
 import threading
@@ -384,6 +386,29 @@ class OverpassSource:
         return list(merged.values())
 
 
+def km_between(lat1, lng1, lat2, lng2) -> float:
+    import math
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lng2 - lng1)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 6371.0 * 2 * math.asin(math.sqrt(h))
+
+
+def box_around(lat: float, lng: float, km: float):
+    """(west, south, east, north) of a square that holds a circle of `km` around the point."""
+    import math
+    dlat = km / 111.0
+    dlng = km / (111.0 * max(math.cos(math.radians(lat)), 0.01))
+    return lng - dlng, lat - dlat, lng + dlng, lat + dlat
+
+
+def inside_radius(b, city: dict, km: float) -> bool:
+    """True when the business lies within `km` of the area centre (or either point is unknown)."""
+    if b.lat is None or b.lng is None or city.get("lat") is None or city.get("lng") is None:
+        return True
+    return km_between(city["lat"], city["lng"], b.lat, b.lng) <= km
+
+
 # --------------------------------------------------------------------
 # Overture Maps (free, storable)
 # --------------------------------------------------------------------
@@ -393,11 +418,15 @@ class OvertureSource:
     RELEASES_URL = "https://overturemaps-us-west-2.s3.amazonaws.com/?list-type=2&prefix=release/&delimiter=/"
 
     def __init__(self, release: str = "latest", max_places: int = 100, cache_dir: str | None = None,
-                 query=None, list_releases=None):
+                 query=None, list_releases=None, radius_km: float = 25.0, categories: dict | None = None):
         # Overture deletes releases after a few months, so a pinned one eventually fails every query.
         # "latest" (the default) is resolved once, on first use, to the newest release still published.
         self._release = (release or "latest").strip()
         self._list_releases = list_releases     # injected in tests so nothing is downloaded
+        self.radius_km = float(radius_km)
+        # niche -> Overture taxonomy.primary values. A niche listed here is matched on the category
+        # only (exact), so "med spa" no longer catches "Spartan Krav Maga" or a nail salon.
+        self.categories = {k.lower(): [c.lower() for c in v] for k, v in (categories or {}).items()}
         self.max_places = int(max_places)
         self.cache_dir = cache_dir          # open data only (Overture's licence allows keeping it)
         self._query_fn = query              # injected in tests so nothing is downloaded
@@ -443,7 +472,8 @@ class OvertureSource:
     def _cache_path(self, niche: str, city: dict):
         import hashlib
         from pathlib import Path
-        key = f'{self.release}|{niche.lower()}|{round(city["lat"], 2)}|{round(city["lng"], 2)}|{self.max_places}'
+        key = (f'{self.release}|{niche.lower()}|{round(city["lat"], 2)}|{round(city["lng"], 2)}|{self.max_places}'
+               f'|{self.radius_km}|{",".join(self.categories.get(niche.lower(), []))}')
         return Path(self.cache_dir) / (hashlib.sha1(key.encode()).hexdigest()[:20] + ".json")
 
     def search(self, niche: str, city: dict) -> list[Business]:
@@ -456,6 +486,8 @@ class OvertureSource:
             except (ValueError, OSError):
                 pass                                    # a damaged cache file is just a miss
         rows = (self._query_fn or self._query_rows)(niche, city)
+        rows = [r for r in rows if r.get("lat") is None or r.get("lng") is None
+                or km_between(city["lat"], city["lng"], r["lat"], r["lng"]) <= self.radius_km]
         if path is not None:
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -466,22 +498,28 @@ class OvertureSource:
 
     def _query_rows(self, niche: str, city: dict) -> list[dict]:
         con = self._con_get()
-        xmin, ymin, xmax, ymax = self._bbox(city["lat"], city["lng"])
+        xmin, ymin, xmax, ymax = box_around(city["lat"], city["lng"], self.radius_km)
         path = (
             f"s3://overturemaps-us-west-2/release/{self.release}"
             "/theme=places/type=place/*"
         )
-        # Match the niche against the category and the name.
-        terms = [t for t in niche.lower().split() if len(t) > 2]
-        like = " OR ".join(
-            ["lower(coalesce(basic_category,'')) LIKE ?"] * len(terms)
-            + ["lower(coalesce(names.primary,'')) LIKE ?"] * len(terms)
-        )
-        params = [f"%{t}%" for t in terms] * 2
+        cats = self.categories.get(niche.lower())
+        if cats:
+            # Exact Overture categories for this niche.
+            like = "lower(coalesce(taxonomy.primary,'')) IN (" + ",".join(["?"] * len(cats)) + ")"
+            params = list(cats)
+        else:
+            # Unknown niche: whole words of the niche in the category or the name (never part of a word).
+            terms = [t for t in niche.lower().split() if len(t) > 2]
+            like = " OR ".join(
+                ["regexp_matches(lower(coalesce(taxonomy.primary,'')), ?)"] * len(terms)
+                + ["regexp_matches(lower(coalesce(names.primary,'')), ?)"] * len(terms)
+            )
+            params = [rf"\b{re.escape(t)}\b" for t in terms] * 2
         sql = f"""
             SELECT id,
                    names.primary            AS name,
-                   basic_category           AS category,
+                   coalesce(taxonomy.primary, basic_category) AS category,
                    addresses[1].freeform    AS street,
                    addresses[1].locality    AS locality,
                    addresses[1].region      AS region,
@@ -568,7 +606,13 @@ def build_source(cfg: dict):
 def build_overture(cfg: dict) -> "OvertureSource":
     o = cfg.get("overture") or {}
     return OvertureSource(cfg.get("overture_release", "latest"), o.get("max_places", 100),
-                          cache_dir=o.get("cache_dir", "cache/overture"))
+                          cache_dir=o.get("cache_dir", "cache/overture"), radius_km=search_radius_km(cfg),
+                          categories=cfg.get("overture_categories") or {})
+
+
+def search_radius_km(cfg: dict) -> float:
+    """The one search radius every source uses (set per fetch from the CRM; default 25 km)."""
+    return float((cfg.get("overpass") or {}).get("radius_km", 25.0))
 
 
 def check_source(cfg: dict) -> int:

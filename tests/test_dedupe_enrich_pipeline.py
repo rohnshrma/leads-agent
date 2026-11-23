@@ -231,7 +231,7 @@ OVERTURE_ROWS = [
      "lat": 43.2501, "lng": -79.8701},
     {"id": "ov2", "name": "Overture Only Dental", "category": "dentist", "street": "2 B St", "locality": "Hamilton",
      "region": "ON", "website": "", "phone": "+19055550111", "email": "", "confidence": 0.9, "source_count": 2,
-     "lat": 43.5, "lng": -79.5},
+     "lat": 43.30, "lng": -79.75},
 ]
 CFG = {
     "country": "CA", "min_score_to_report": 0, "niches": ["dental clinic"],
@@ -478,3 +478,87 @@ def test_googles_website_grades_a_merged_lead_but_is_never_exported():
                               biz("A", source="google", sid="g1", pid="g1", website="https://a.ca", phone="9055550000")])
     assert merged[0].google_site == "https://a.ca"
     assert "a.ca" not in json.dumps(pipeline.to_row(merged[0], cfg))
+
+
+# ---------------------------------------------------------------- area, categories, broken-site accuracy
+def test_overture_drops_rows_outside_the_radius():
+    rows = [dict(OVERTURE_ROWS[0], lat=43.21, lng=-79.80), dict(OVERTURE_ROWS[1], id="far", lat=43.60, lng=-79.80)]
+    ov = OvertureSource(query=lambda n, c: rows, radius_km=20)
+    got = ov.search("dental clinic", {"name": "Area, ON", "lat": 43.2, "lng": -79.8})
+    assert [b.source_id for b in got] == ["ov1"]
+
+
+def test_overture_matches_exact_categories_not_parts_of_names():
+    seen = {}
+
+    class Con:
+        description = [("id",)]
+
+        def execute(self, sql, params):
+            seen["sql"], seen["params"] = sql, params
+            return self
+
+        def fetchall(self):
+            return []
+
+    ov = OvertureSource("2026-11-18.0", categories={"med spa": ["medical_spa", "laser_hair_removal"]})
+    ov._con = Con()
+    ov._query_rows("med spa", {"name": "Maple, ON", "lat": 43.85, "lng": -79.51})
+    assert "taxonomy.primary" in seen["sql"] and " IN (" in seen["sql"] and "LIKE" not in seen["sql"]
+    assert seen["params"] == ["medical_spa", "laser_hair_removal"]
+    ov._query_rows("tattoo studio", {"name": "Maple, ON", "lat": 43.85, "lng": -79.51})
+    assert all(p.startswith(r"\b") and p.endswith(r"\b") for p in seen["params"])   # whole words only
+
+
+def blocked_or_dead_audit(url, cfg):
+    if not url:
+        return {"verdict": "NO_WEBSITE"}
+    if "blocked" in url:
+        return {"verdict": "BLOCKED", "http_status": 403}
+    if "dead" in url:
+        return {"verdict": "BROKEN", "http_status": "ConnectionError"}
+    return {"verdict": "WEAK", "https": False, "mobile_friendly": False, "load_seconds": 1,
+            "has_meta_description": False, "title": "x"}
+
+
+def test_a_site_that_refuses_the_check_is_not_reported_as_broken():
+    src = ListSource([[biz("Walled Clinic", source="overture", website="https://blocked.example.ca", phone="9055550001")]])
+    with mock.patch("leadagent.pipeline.audit.audit_site", side_effect=blocked_or_dead_audit), \
+            mock.patch("leadagent.safeurl.safe_get", side_effect=safeurl.FetchRefused("n/a")):
+        rows, summary = pipeline.run({**MIX_CFG, "lead_mix": {}}, AREAS[:1], sources={"overture": src}, budget=Meter(0))
+    assert rows == [] and summary["dropped"]["site_refused_check"] == 1
+
+
+def test_a_dead_old_website_is_regraded_on_the_site_google_lists_now():
+    stored = biz("Moved Chiro", source="overture", sid="ov7", website="https://dead-old.ca", phone="9055552222")
+    g = biz("Moved Chiro", source="google", sid="ChIJmv", pid="ChIJmv", website="https://new-weak.ca", phone="9055552222")
+    src = ListSource([[stored, g]])
+    with mock.patch("leadagent.pipeline.audit.audit_site", side_effect=blocked_or_dead_audit), \
+            mock.patch("leadagent.safeurl.safe_get", side_effect=safeurl.FetchRefused("n/a")):
+        rows, _ = pipeline.run({**MIX_CFG, "lead_mix": {}}, AREAS[:1], sources={"overture": src}, budget=Meter(0))
+    assert len(rows) == 1 and rows[0].lead_type == "WEAK SITE"
+    assert any("Old website is dead" in r for r in rows[0].reasons)
+    assert "new-weak.ca" not in json.dumps(pipeline.to_row(rows[0], MIX_CFG))     # Google's link never exported
+
+
+def test_broken_sites_fill_at_most_half_the_bad_website_spots_unless_weak_sites_run_out():
+    dead = [biz(f"Dead {i}", source="overture", website=f"https://dead{i}.ca", phone=f"905444{i:04d}", lat=43 + i / 50)
+            for i in range(6)]
+    weak = [biz(f"Weak {i}", source="overture", website=f"https://weak{i}.ca", phone=f"905333{i:04d}", lat=44 + i / 50)
+            for i in range(6)]
+    cfg = {**MIX_CFG, "lead_mix": {"no_website": 0, "bad_website": 4, "max_broken_share": 0.5}}
+    with mock.patch("leadagent.pipeline.audit.audit_site", side_effect=blocked_or_dead_audit), \
+            mock.patch("leadagent.safeurl.safe_get", side_effect=safeurl.FetchRefused("n/a")):
+        rows, _ = pipeline.run(cfg, AREAS[:1], sources={"overture": ListSource([dead + weak])}, budget=Meter(0))
+        assert sorted(b.lead_type for b in rows) == ["BROKEN SITE"] * 2 + ["WEAK SITE"] * 2
+        rows, _ = pipeline.run(cfg, AREAS[:1], sources={"overture": ListSource([dead + weak[:1]])}, budget=Meter(0))
+        assert sorted(b.lead_type for b in rows) == ["BROKEN SITE"] * 3 + ["WEAK SITE"]   # gap filled
+
+
+def test_a_franchise_with_its_own_name_is_caught_by_the_head_office_website():
+    src = ListSource([[biz("Pharmacy Care Clinic", source="overture", website="https://www.shoppersdrugmart.ca/",
+                           phone="9055559999")]])
+    with mock.patch("leadagent.pipeline.audit.audit_site", side_effect=blocked_or_dead_audit), \
+            mock.patch("leadagent.safeurl.safe_get", side_effect=safeurl.FetchRefused("n/a")):
+        rows, summary = pipeline.run({**MIX_CFG, "lead_mix": {}}, AREAS[:1], sources={"overture": src}, budget=Meter(0))
+    assert rows == [] and summary["dropped"]["chain"] == 1

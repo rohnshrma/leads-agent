@@ -47,6 +47,23 @@ overture:
   cache_dir: cache/overture   # open data only; cached between runs by the workflow
 
 overture_release: "latest"     # newest published release; Overture deletes old ones after a few months
+
+# Each business type is matched on Overture's own category (exact), never on part of a name.
+# Taken from the 2026-11-18 release around Toronto. A type missing here falls back to whole-word matching.
+overture_categories:
+  "dental clinic": [dental_clinic, general_dentistry, cosmetic_dentistry, pediatric_dentistry,
+                    endodontics, periodontics, prosthodontics]
+  "orthodontist": [orthodontics]
+  "med spa": [medical_spa, laser_hair_removal]
+  "dermatology clinic": [dermatology]
+  "physiotherapist": [physical_therapy, sports_medicine, rehabilitation_center]
+  "chiropractor": [chiropractic]
+  "optometrist": [optometry, vision_or_eye_care_clinic]
+  "veterinary clinic": [veterinarian]
+  "hearing clinic": [audiology, hearing_aid_store]
+  "psychology clinic": [psychology, psychotherapy, counseling]
+  "podiatrist": [podiatry]
+  "massage therapy clinic": [massage_therapy]
 google_api_key_env: "GOOGLE_MAPS_API_KEY"
 
 # ---- WHERE TO HUNT -----------------------------------------
@@ -315,6 +332,8 @@ min_score_to_report: 40
 lead_mix:
   no_website: 12
   bad_website: 12
+  max_broken_share: 0.5   # at most half the bad-website leads may be broken sites; the rest are weak sites
+                          # (if there are not enough weak sites, broken ones fill the gap)
 
 # ---- OUTREACH ----------------------------------------------
 outreach:

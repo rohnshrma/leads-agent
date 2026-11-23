@@ -163,6 +163,11 @@ def _classify(cfg: dict, found: list, *, ledger, include_seen: bool, deadline: f
     def site_of(b):
         return b.website or getattr(b, "google_site", "")
 
+    def fallback_of(b):
+        """Google's current website, when the stored one differs (the business may have moved site)."""
+        g = getattr(b, "google_site", "")
+        return g if g and b.website and g != b.website else ""
+
     if cfg.get("website_audit", {}).get("enabled", True):
         todo = list(dict.fromkeys(site_of(b) for b in fresh if site_of(b) and site_of(b) not in audits))
         if todo and time.monotonic() < deadline:
@@ -175,12 +180,26 @@ def _classify(cfg: dict, found: list, *, ledger, include_seen: bool, deadline: f
                 b.audit = audit.audit_site("", cfg)
             else:
                 b.audit = audits.get(url) or {"verdict": "OK"}     # not checked before the time limit
+        # A dead stored website is often just an old address: grade the site Google lists now instead.
+        retry = [b for b in fresh if b.audit.get("verdict") == "BROKEN" and fallback_of(b)]
+        todo = list(dict.fromkeys(fallback_of(b) for b in retry if fallback_of(b) not in audits))
+        if todo and time.monotonic() < deadline:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                for url, a in zip(todo, pool.map(lambda u: audit.audit_site(u, cfg), todo)):
+                    audits[url] = a
+        for b in retry:
+            a = audits.get(fallback_of(b))
+            if a and a.get("verdict") != "BROKEN":
+                b.audit = a
+                b.google_site_used = True
     else:
         for b in fresh:
             b.audit = {"verdict": "NO_WEBSITE" if not site_of(b) else "OK"}
     for b in fresh:
         audit.score(b, cfg)
-        if not b.website and getattr(b, "google_site", ""):
+        if getattr(b, "google_site_used", False):
+            b.reasons.append("Old website is dead; graded the website Google lists now")
+        elif not b.website and getattr(b, "google_site", ""):
             b.reasons.append("Website graded from Google's listing (the map data lacked it)")
         b.fetched_at = b.fetched_at or now_iso()
     return fresh
@@ -231,17 +250,35 @@ def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, i
 
     ranked = sorted(fresh, key=lambda b: -b.opportunity_score)
     reported, taken = [], Counter()
+    share = float((cfg.get("lead_mix") or {}).get("max_broken_share", 1.0))
+    max_broken = int(targets.get("bad_website", 0) * share)
     for b in ranked:
         kind = bucket_of(b)
-        if not kind:
+        if b.lead_type == "UNCHECKED":
+            summary["dropped"]["site_refused_check"] += 1        # could not look: never guess "broken"
+        elif not kind:
             summary["dropped"]["good_site"] += 1                 # a good website: nothing to sell them
         elif b.opportunity_score < threshold:
             summary["dropped"]["below_min_score"] += 1
         elif targets and taken[kind] >= targets.get(kind, 0):
             summary["dropped"]["over_target"] += 1
+        elif kind == "bad_website" and b.lead_type == "BROKEN SITE" and targets.get("bad_website") \
+                and taken["broken"] >= max_broken:
+            summary["dropped"]["broken_over_share"] += 1        # keep room for weak sites (SEO / CRM pitch)
         else:
             taken[kind] += 1
+            if b.lead_type == "BROKEN SITE":
+                taken["broken"] += 1
             reported.append(b)
+    # Broken sites skipped for the share limit come back if there were not enough weak sites to fill the spot.
+    if targets.get("bad_website"):
+        spare = targets["bad_website"] - taken["bad_website"]
+        for b in [b for b in ranked if b.lead_type == "BROKEN SITE" and b not in reported
+                  and b.opportunity_score >= threshold][:max(spare, 0)]:
+            reported.append(b)
+            taken["bad_website"] += 1
+            taken["broken"] += 1
+            summary["dropped"]["broken_over_share"] -= 1
     summary["mix"] = dict(taken)
     summary["reported"] = len(reported)
     summary["phone"] = dict(Counter((b.phone_status or ("found" if b.phone else "missing")) for b in reported))
