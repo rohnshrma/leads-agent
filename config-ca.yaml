@@ -29,7 +29,9 @@ source: "osm"
 # Sources are tried in this order: Google Places (only inside the shared call budget kept by the CRM
 # backend), Overture Maps, then OpenStreetMap. Results are merged and de-duplicated in memory.
 # Google data is used in memory only; the CRM stores just the place_id (see docs/COMPLIANCE.md).
-discovery: ["google", "overture", "overpass"]
+# OpenStreetMap ("overpass") is switched off: it was slow, often had no phone number, and is replaced by
+# Google Places plus Overture. To bring it back, add "overpass" to the end of this list.
+discovery: ["google", "overture"]
 
 overpass:
   pause_seconds: 2.0     # be polite to donated public infrastructure
@@ -44,7 +46,7 @@ overture:
   max_places: 100
   cache_dir: cache/overture   # open data only; cached between runs by the workflow
 
-overture_release: "2026-08-19.0"
+overture_release: "latest"     # newest published release; Overture deletes old ones after a few months
 google_api_key_env: "GOOGLE_MAPS_API_KEY"
 
 # ---- WHERE TO HUNT -----------------------------------------
@@ -302,6 +304,17 @@ scoring:
 
 # Only report leads at or above this score.
 min_score_to_report: 40
+
+# ---- WHAT EACH RUN DELIVERS ----------------------------------
+# A business with a good website is never reported (nothing to sell them). Each run stops searching
+# once it has these, best scores first:
+#   no_website  - no site at all, or only a Facebook/Instagram page   -> sell a website
+#   bad_website - broken, placeholder, or weak (not secure, not mobile-friendly, slow, outdated,
+#                 missing SEO basics)                                 -> sell a rebuild, SEO, CRM
+# Set a number to 0 to have no limit for that kind.
+lead_mix:
+  no_website: 12
+  bad_website: 12
 
 # ---- OUTREACH ----------------------------------------------
 outreach:

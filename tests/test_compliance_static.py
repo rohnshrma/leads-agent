@@ -82,7 +82,9 @@ def test_gitignore_keeps_secrets_and_lead_data_out():
 
 def test_shipped_configs_use_the_safe_defaults():
     ca = yaml.safe_load((ROOT / "config-ca.yaml").read_text(encoding="utf-8"))
-    assert ca["discovery"] == ["google", "overture", "overpass"]
+    assert ca["discovery"] == ["google", "overture"]          # OpenStreetMap switched off for Canada
+    assert ca["overture_release"] == "latest"
+    assert ca["lead_mix"] == {"no_website": 12, "bad_website": 12}
     assert ca["output"]["write_html"] is False
     assert len(ca["overpass"]["mirrors"]) == 3 and ca["overpass"]["mirrors"][0].startswith("https://overpass-api.de")
     us = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
