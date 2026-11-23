@@ -21,7 +21,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from . import audit, dedupe, enrich, google_verify, quality
+from . import audit, categorize, dedupe, enrich, google_verify, quality
 from .budget import Budget
 from .sources import Business, DeadlineReached
 
@@ -139,6 +139,10 @@ def _classify(cfg: dict, found: list, *, ledger, include_seen: bool, deadline: f
               audits: dict) -> list[Business]:
     """merge -> already-seen -> quality filters -> website audit -> score. Audits are cached by URL in
     `audits`, so classifying again (to check the lead targets) never fetches a site twice."""
+    # Google answers a search with "related" places too: keep, relabel or drop each one by its name and types.
+    found, crep = categorize.apply(found, cfg)
+    summary["dropped"]["wrong_category"] = crep["wrong_category"]
+    summary["relabelled"] = crep["relabelled"]
     merged, mstats = dedupe.merge(found)
     summary["merge"] = mstats
     fresh, seen, no_id = [], 0, 0
