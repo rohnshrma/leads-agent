@@ -173,5 +173,36 @@ class SlowSiteRetryTests(unittest.TestCase):
         self.assertTrue(quality.chain_reason(b, quality.DEFAULT_CHAIN_NAMES, set(), True))
 
 
+class FranchiseTests(unittest.TestCase):
+    def test_overture_brand_only_counts_for_real_chains(self):
+        from leadagent.sources import chain_brand
+        self.assertEqual(chain_brand({"brand": "Lifemark", "brand_known": True, "brand_locations": 1}), "Lifemark")
+        self.assertEqual(chain_brand({"brand": "Van Rehab", "brand_known": False, "brand_locations": 5}), "Van Rehab")
+        self.assertEqual(chain_brand({"brand": "Smile Clinic", "brand_known": False, "brand_locations": 2}), "")
+        self.assertEqual(chain_brand({}), "")
+
+    def test_one_website_at_three_places_is_a_group(self):
+        from types import SimpleNamespace as B
+        from leadagent import quality
+        mk = lambda lat, site: B(name=f"Clinic {lat}", website=site, lat=lat, lng=-79.5, address="", city_query="x", brand="")
+        found = [mk(43.70, "https://vanrehab.ca/a"), mk(43.80, "http://www.vanrehab.ca"), mk(43.90, "https://vanrehab.ca/"),
+                 mk(43.75, "https://solo.ca"), mk(43.85, "https://twoplaces.ca"), mk(43.95, "https://twoplaces.ca")]
+        keys = quality.shared_site_keys(found)
+        self.assertEqual(keys, {"vanrehab.ca"})
+        self.assertEqual(quality.chain_reason(found[0], [], keys, True), "same website at several locations")
+        self.assertEqual(quality.chain_reason(found[3], [], keys, True), "")
+
+    def test_independent_names_are_not_caught_by_franchise_words(self):
+        from leadagent import quality
+        for name in ("Oak Park Dental", "West Coast Dental Care", "Clearly Smiles Orthodontics", "Maple Physiotherapy"):
+            from types import SimpleNamespace
+            b = SimpleNamespace(name=name, website="", brand="", google_site="")
+            self.assertEqual(quality.chain_reason(b, quality.DEFAULT_CHAIN_NAMES, set(), True), "", name)
+        for name in ("Massage Addict Vaughan", "HearingLife - Woodbridge", "FYidoctors Maple", "Docbraces Brampton"):
+            from types import SimpleNamespace
+            b = SimpleNamespace(name=name, website="", brand="", google_site="")
+            self.assertNotEqual(quality.chain_reason(b, quality.DEFAULT_CHAIN_NAMES, set(), True), "", name)
+
+
 if __name__ == "__main__":
     unittest.main()

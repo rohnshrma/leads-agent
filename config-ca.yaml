@@ -245,7 +245,7 @@ website_audit:
 # missing from the map. These run before any website is audited.
 quality_filters:
   enabled: true
-  skip_chains: true              # known chains, OSM brand tags, and one name at 3+ separate places
+  skip_chains: true              # known chains and franchises, Overture brands (big brand or 3+ places), one name or one website at 3+ places
   chain_min_locations: 3
   skip_branded: true             # skip anything OpenStreetMap tags with a brand
   chain_names: []                # add your own, e.g. ["Smiles Dental Group"]

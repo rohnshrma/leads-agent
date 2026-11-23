@@ -473,7 +473,7 @@ class OvertureSource:
         import hashlib
         from pathlib import Path
         key = (f'{self.release}|{niche.lower()}|{round(city["lat"], 2)}|{round(city["lng"], 2)}|{self.max_places}'
-               f'|{self.radius_km}|{",".join(self.categories.get(niche.lower(), []))}')
+               f'|{self.radius_km}|{",".join(self.categories.get(niche.lower(), []))}|brand2')
         return Path(self.cache_dir) / (hashlib.sha1(key.encode()).hexdigest()[:20] + ".json")
 
     def search(self, niche: str, city: dict) -> list[Business]:
@@ -516,7 +516,18 @@ class OvertureSource:
                 + ["regexp_matches(lower(coalesce(names.primary,'')), ?)"] * len(terms)
             )
             params = [rf"\b{re.escape(t)}\b" for t in terms] * 2
+        # `area` is every place in the box (any type), so a brand's other locations nearby can be counted:
+        # a brand with a Wikidata entry (a big chain) or at 3+ places here is a chain, not a lead.
         sql = f"""
+            WITH area AS (
+                SELECT * FROM read_parquet('{path}', hive_partitioning=1)
+                WHERE bbox.xmin BETWEEN {xmin} AND {xmax}
+                  AND bbox.ymin BETWEEN {ymin} AND {ymax}
+            ),
+            brands AS (
+                SELECT lower(brand.names.primary) AS b, count(*) AS n FROM area
+                WHERE brand.names.primary IS NOT NULL GROUP BY 1
+            )
             SELECT id,
                    names.primary            AS name,
                    coalesce(taxonomy.primary, basic_category) AS category,
@@ -528,11 +539,12 @@ class OvertureSource:
                    coalesce(emails[1],'')   AS email,
                    confidence,
                    len(coalesce(sources,[])) AS source_count,
-                   ST_X(geometry) AS lng, ST_Y(geometry) AS lat
-            FROM read_parquet('{path}', hive_partitioning=1)
-            WHERE bbox.xmin BETWEEN {xmin} AND {xmax}
-              AND bbox.ymin BETWEEN {ymin} AND {ymax}
-              AND coalesce(operating_status,'open') = 'open'
+                   ST_X(geometry) AS lng, ST_Y(geometry) AS lat,
+                   coalesce(brand.names.primary, '') AS brand,
+                   brand.wikidata IS NOT NULL AS brand_known,
+                   coalesce(brands.n, 0) AS brand_locations
+            FROM area LEFT JOIN brands ON brands.b = lower(area.brand.names.primary)
+            WHERE coalesce(operating_status,'open') = 'open'
               AND coalesce(confidence, 0) >= 0.5
               AND ({like})
             LIMIT {self.max_places}
@@ -564,8 +576,18 @@ class OvertureSource:
                 lng=d.get("lng"),
                 confidence=d.get("confidence"),
                 source_count=d.get("source_count"),
+                brand=chain_brand(d),
             ))
         return out
+
+
+def chain_brand(row: dict) -> str:
+    """Overture's brand, kept only when it marks a chain: a known (Wikidata) brand or 3+ places nearby.
+    A one-off clinic that Overture happens to tag with its own name stays a lead."""
+    b = (row.get("brand") or "").strip()
+    if b and (row.get("brand_known") or int(row.get("brand_locations") or 0) >= 3):
+        return b
+    return ""
 
 
 def build_source(cfg: dict):
