@@ -464,8 +464,8 @@ def test_searching_stops_once_both_buckets_are_full():
 
 
 def test_googles_website_grades_a_merged_lead_but_is_never_exported():
-    stored = biz("Maple Chiro", source="overture", sid="ov9", website="", phone="9055551234")
-    g = biz("Maple Chiro", source="google", sid="ChIJm1", pid="ChIJm1", website="https://maplechiro-good.ca",
+    stored = biz("Maple Dental", source="overture", sid="ov9", website="", phone="9055551234")
+    g = biz("Maple Dental", source="google", sid="ChIJm1", pid="ChIJm1", website="https://maplechiro-good.ca",
             phone="9055551234")
     g.from_google = True
     src = ListSource([[stored, g]])
@@ -530,8 +530,8 @@ def test_a_site_that_refuses_the_check_is_not_reported_as_broken():
 
 
 def test_a_dead_old_website_is_regraded_on_the_site_google_lists_now():
-    stored = biz("Moved Chiro", source="overture", sid="ov7", website="https://dead-old.ca", phone="9055552222")
-    g = biz("Moved Chiro", source="google", sid="ChIJmv", pid="ChIJmv", website="https://new-weak.ca", phone="9055552222")
+    stored = biz("Moved Dental", source="overture", sid="ov7", website="https://dead-old.ca", phone="9055552222")
+    g = biz("Moved Dental", source="google", sid="ChIJmv", pid="ChIJmv", website="https://new-weak.ca", phone="9055552222")
     src = ListSource([[stored, g]])
     with mock.patch("leadagent.pipeline.audit.audit_site", side_effect=blocked_or_dead_audit), \
             mock.patch("leadagent.safeurl.safe_get", side_effect=safeurl.FetchRefused("n/a")):
