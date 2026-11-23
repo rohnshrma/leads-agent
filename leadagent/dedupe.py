@@ -136,7 +136,7 @@ def merge(businesses: list) -> tuple[list, dict]:
                 # Google's website is never copied onto the stored record, but it is remembered in memory
                 # (a plain attribute, not a field, so as_row/asdict never export it) so the run can grade
                 # the real site instead of calling a business with a website "NO WEBSITE".
-                if other.website and not keep.website and not getattr(keep, "google_site", ""):
+                if other.website and other.website != keep.website and not getattr(keep, "google_site", ""):
                     keep.google_site = other.website
                 continue                          # nothing of Google's is copied onto a stored record
             for attr in ("phone", "website", "email", "address", "brand"):

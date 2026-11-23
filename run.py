@@ -87,7 +87,8 @@ def build_sources(cfg: dict, budget, dry_run: bool, deadline: float) -> dict:
     if "google" in wanted:
         key = os.environ.get(cfg.get("google_api_key_env", "GOOGLE_MAPS_API_KEY"), "").strip()
         if key:
-            out["google"] = GoogleDiscovery(key, budget)
+            from leadagent.sources import search_radius_km
+            out["google"] = GoogleDiscovery(key, budget, radius_km=search_radius_km(cfg))
         else:
             print("Google Places is not used: no API key is set")
     if "overture" in wanted:

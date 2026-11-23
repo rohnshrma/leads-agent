@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 import requests
 
 from .budget import Budget, KIND_TEXT_SEARCH
-from .sources import Business
+from .sources import Business, box_around, inside_radius
 
 ENDPOINT = "https://places.googleapis.com/v1/places:searchText"
 
@@ -35,11 +35,12 @@ PAGE_SIZE = 20
 
 
 class GoogleDiscovery:
-    def __init__(self, api_key: str, budget: Budget, post=None, max_pages: int = MAX_PAGES):
+    def __init__(self, api_key: str, budget: Budget, post=None, max_pages: int = MAX_PAGES, radius_km: float = 25.0):
         self.api_key = (api_key or "").strip()
         self.budget = budget
         self._post = post or requests.post
         self.max_pages = min(int(max_pages), MAX_PAGES)
+        self.radius_km = float(radius_km)
         self.calls = 0                  # requests actually sent
         self.found = 0
         self.stopped = ""               # "" while usable; otherwise why Places is no longer used this run
@@ -75,11 +76,12 @@ class GoogleDiscovery:
                 "regionCode": "CA",
                 "includePureServiceAreaBusinesses": True,
             }
-            # Google rejects a follow-up page (HTTP 400 INVALID_ARGUMENT) unless every parameter other than
-            # pageSize/pageToken matches the first request, so locationBias goes on every page.
+            # A hard boundary (results outside it are never returned), on every page: Google rejects a
+            # follow-up page (HTTP 400 INVALID_ARGUMENT) unless every parameter but pageSize/pageToken matches.
             if city.get("lat") is not None and city.get("lng") is not None:
-                body["locationBias"] = {"circle": {"center": {"latitude": city["lat"], "longitude": city["lng"]},
-                                                   "radius": 35000.0}}
+                w, s, e, n = box_around(city["lat"], city["lng"], self.radius_km)
+                body["locationRestriction"] = {"rectangle": {"low": {"latitude": s, "longitude": w},
+                                                             "high": {"latitude": n, "longitude": e}}}
             if token:
                 body["pageToken"] = token
             self.calls += 1
@@ -103,7 +105,8 @@ class GoogleDiscovery:
             except ValueError:
                 self.failed += 1
                 break
-            out.extend(self._to_businesses(data.get("places") or [], niche, city))
+            out.extend(b for b in self._to_businesses(data.get("places") or [], niche, city)
+                       if inside_radius(b, city, self.radius_km))
             token = data.get("nextPageToken") or ""
             if not token:
                 break
