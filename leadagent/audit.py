@@ -165,7 +165,8 @@ def audit_site(url: str, cfg: dict) -> dict:
         return res
 
     # Access denied / rate limited / bot wall: the site may be fine for people, we just could not look.
-    if r.status_code in BLOCKED_STATUSES:
+    # HTTP 202 with an empty page is a bot challenge (WAF / Sucuri style), not a placeholder site.
+    if r.status_code in BLOCKED_STATUSES or (r.status_code == 202 and not (r.content or b"").strip()):
         res["verdict"] = "BLOCKED"
         return res
     if r.status_code >= 400:

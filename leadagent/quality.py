@@ -39,6 +39,14 @@ DEFAULT_CHAIN_NAMES = [
     "vca ", "petsmart", "petco", "massage envy", "hand & stone", "hand and stone",
     "the joint", "elements massage", "orangetheory", "goodlife", "anytime fitness",
     "planet fitness", "great clips", "sport clips", "jack nathan", "rexall", "pharmasave",
+    "theodore & pringle", "theodore and pringle", "no frills", "real canadian superstore", "loblaw",
+    "fyidoctors", "fyi doctors", "iris optometr", "iris vision", "visionworks", "bayview vision",
+    # big Canadian groups and franchises in the niches we hunt (seen in Overture's brand data)
+    "massage addict", "hearinglife", "amplifon", "connect hearing", "nexgen hearing", "helix hearing",
+    "beltone", "miracle-ear", "hear.com", "bailey nelson", "kodak lens", "docbraces", "123dentist",
+    "altima dental", "medrehab", "pt health", "cornerstone physiotherapy",
+    "physio pmr", "kinatex", "skin vitality", "dermapure", "laser clinics canada", "lasik md", "lasikmd",
+    "walmart vision", "costco optical", "banfield", "vca canada", "vca animal",
 ]
 
 # A franchise location often has its own name but the head office's website.
@@ -47,6 +55,7 @@ CHAIN_DOMAINS = {
     "lifemark.ca", "cbi.ca", "pthealth.ca", "dentalcorp.ca", "lenscrafters.ca", "specsavers.ca",
     "hakimoptical.ca", "walmart.ca", "costco.ca", "petsmart.ca", "massageenvy.com", "handandstone.ca",
     "thejoint.com", "banfield.com", "vcacanada.com", "physiomed.com", "pearlevision.ca",
+    "theodoreandpringle.ca", "fyidoctors.com", "iris.ca", "loblaw.ca", "nofrills.ca",
 }
 
 # Words that do not identify a business ("Smile Dental Clinic Inc." -> "smile").
@@ -136,7 +145,34 @@ def chain_reason(b, chain_names: list[str], multi_keys: set[str], skip_branded: 
             return f"chain website ({host})"
     if normalise_name(b.name) in multi_keys:
         return "same name at several locations"
+    if site_host(b.website) in multi_keys:
+        return "same website at several locations"
     return ""
+
+
+def site_host(url: str) -> str:
+    return re.sub(r"^https?://", "", (url or "").lower()).split("/")[0].removeprefix("www.")
+
+
+def shared_site_keys(found: list, min_locations: int = 3, apart_km: float = 1.0) -> set[str]:
+    """Website hosts used by `min_locations`+ separate places: one head-office site = a chain or group."""
+    from types import SimpleNamespace
+    proxies = [SimpleNamespace(name=site_host(b.website), lat=b.lat, lng=b.lng, address=b.address,
+                               city_query=b.city_query) for b in found if site_host(b.website)]
+    groups: dict[str, list] = defaultdict(list)
+    for p in proxies:
+        groups[p.name].append(p)
+    out = set()
+    for host, members in groups.items():
+        spots: list = []
+        for p in members:
+            where = (p.lat, p.lng) if p.lat is not None and p.lng is not None else (p.address or p.city_query)
+            if not any((_km(s, where) < apart_km) if isinstance(s, tuple) and isinstance(where, tuple) else s == where
+                       for s in spots):
+                spots.append(where)
+        if len(spots) >= min_locations:
+            out.add(host)
+    return out
 
 
 def apply(found: list, fresh: list, cfg: dict) -> tuple[list, dict]:
@@ -154,6 +190,7 @@ def apply(found: list, fresh: list, cfg: dict) -> tuple[list, dict]:
     multi = set()
     if q.get("skip_chains", True):
         multi = multi_location_keys(found, int(q.get("chain_min_locations", 3)))
+        multi |= shared_site_keys(found, int(q.get("chain_min_locations", 3)))
     free = FREE_EMAIL_DOMAINS | {d.lower() for d in (q.get("free_email_domains") or [])}
 
     kept = []
