@@ -141,6 +141,23 @@ class SlowSiteRetryTests(unittest.TestCase):
             res = audit.audit_site("https://dead.example", {})
         self.assertEqual(res["verdict"], "BROKEN")
         self.assertEqual(res["http_status"], "ConnectionError")
+        self.assertEqual(res["listed_url"], "https://dead.example")
+
+    def test_dead_www_host_falls_back_to_the_bare_domain(self):
+        def get(url, timeout):
+            if "://www." in url:
+                raise requests.ConnectionError()
+            return FakeResponse()
+        with mock.patch("leadagent.audit.safeurl.safe_get", side_effect=get) as g, \
+                mock.patch("leadagent.audit.time.sleep"):
+            res = audit.audit_site("http://www.kingsway.example/", {})
+        self.assertNotEqual(res["verdict"], "BROKEN")
+        self.assertEqual(g.call_args_list[2].args[0], "http://kingsway.example/")
+
+    def test_www_twin(self):
+        self.assertEqual(audit._www_twin("https://www.a.ca/x"), "https://a.ca/x")
+        self.assertEqual(audit._www_twin("http://a.ca"), "http://www.a.ca")
+        self.assertEqual(audit._www_twin("http://10.0.0.1/"), "")
 
 
 if __name__ == "__main__":
