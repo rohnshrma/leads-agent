@@ -32,3 +32,6 @@ data/
 out/
 !out/.gitkeep
 cache/
+
+# Public reference data (GeoNames, CC BY 4.0): not lead data
+!leadagent/ca_postal_areas.csv
