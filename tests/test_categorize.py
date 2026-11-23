@@ -42,6 +42,8 @@ class DecideTests(unittest.TestCase):
         self.check("Braces Studio Maple", "dental clinic", "dentist", ("relabel", "orthodontist"))
         self.check("Smile Braces Studio", "dental clinic", "dentist", ("keep", "dental clinic"))   # the searched type wins a tie
         self.check("Dr. Lee", "chiropractor", "physiotherapist", ("relabel", "physiotherapist"))
+        self.check("Therapy Point", "physiotherapist", "physiotherapist", ("keep", "physiotherapist"))
+        self.check("Therapy Point", "dental clinic", "physiotherapist", ("relabel", "physiotherapist"))
         self.check("Orthotic Lab Woodbridge", "orthodontist", "", ("relabel", "podiatrist"))
 
     def test_a_relabel_must_be_one_of_the_types_chosen_for_the_run(self):

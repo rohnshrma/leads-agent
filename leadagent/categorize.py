@@ -31,7 +31,13 @@ NAME_WORDS: list[tuple[str, str]] = [
     ("veterinary clinic", r"\bvets?\b|veterin|animal|pet hospital|\bcat clinic"),
     ("dermatology clinic", r"derma"),
     ("med spa", r"med(ical)? ?spa|medi ?spa|aesthetic|laser|botox|injector|skin|cosmetic (clinic|surgery)"),
-    ("psychology clinic", r"psycholog|psychotherap|counsel|mental health|\btherapy\b|therapist"),
+    ("psychology clinic", r"psycholog|psychotherap|counsel|mental health"),
+]
+
+# Weak name words: used only when Google's types say nothing ("Therapy Point" with Google type
+# physiotherapist stays a physio; "Erin Griffin Therapy" with no useful type becomes a psychology clinic).
+WEAK_NAME_WORDS: list[tuple[str, str]] = [
+    ("psychology clinic", r"\btherapy\b|therapist"),
 ]
 
 # Google types that confirm a niche on their own.
@@ -54,6 +60,7 @@ NOT_OURS = {
 }
 
 _COMPILED = [(n, re.compile(p, re.I)) for n, p in NAME_WORDS]
+_WEAK = [(n, re.compile(p, re.I)) for n, p in WEAK_NAME_WORDS]
 
 
 def name_niches(name: str) -> list[str]:
@@ -81,6 +88,11 @@ def decide(b, wanted: list[str]) -> tuple[str, str]:
     by_type = [n for n in allowed if types & GOOGLE_TYPES.get(n, set())]
     if by_type:
         return "relabel", by_type[0]
+    weak = [n for n, rx in _WEAK if rx.search(b.name or "") and n in allowed]
+    if q in weak:
+        return "keep", q
+    if weak:
+        return "relabel", weak[0]
     if types & NOT_OURS:
         return "drop", "not one of our business types"
     return "drop", f"nothing shows it is a {q or 'business we search for'}"
