@@ -160,5 +160,18 @@ class SlowSiteRetryTests(unittest.TestCase):
         self.assertEqual(audit._www_twin("http://10.0.0.1/"), "")
 
 
+    def test_empty_202_is_a_bot_wall_not_a_placeholder(self):
+        r = FakeResponse(status=202, text="")
+        with mock.patch("leadagent.audit.safeurl.safe_get", return_value=r):
+            res = audit.audit_site("https://walled.example", {})
+        self.assertEqual(res["verdict"], "BLOCKED")
+
+    def test_chain_inside_a_grocery_store_is_a_chain(self):
+        from leadagent import quality
+        b = mock.Mock(name="b", website="", brand="")
+        b.name = "Theodore & Pringle in No Frills"
+        self.assertTrue(quality.chain_reason(b, quality.DEFAULT_CHAIN_NAMES, set(), True))
+
+
 if __name__ == "__main__":
     unittest.main()

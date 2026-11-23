@@ -39,6 +39,8 @@ DEFAULT_CHAIN_NAMES = [
     "vca ", "petsmart", "petco", "massage envy", "hand & stone", "hand and stone",
     "the joint", "elements massage", "orangetheory", "goodlife", "anytime fitness",
     "planet fitness", "great clips", "sport clips", "jack nathan", "rexall", "pharmasave",
+    "theodore & pringle", "theodore and pringle", "no frills", "real canadian superstore", "loblaw",
+    "fyidoctors", "fyi doctors", "iris optometr", "iris vision", "visionworks", "bayview vision",
 ]
 
 # A franchise location often has its own name but the head office's website.
@@ -47,6 +49,7 @@ CHAIN_DOMAINS = {
     "lifemark.ca", "cbi.ca", "pthealth.ca", "dentalcorp.ca", "lenscrafters.ca", "specsavers.ca",
     "hakimoptical.ca", "walmart.ca", "costco.ca", "petsmart.ca", "massageenvy.com", "handandstone.ca",
     "thejoint.com", "banfield.com", "vcacanada.com", "physiomed.com", "pearlevision.ca",
+    "theodoreandpringle.ca", "fyidoctors.com", "iris.ca", "loblaw.ca", "nofrills.ca",
 }
 
 # Words that do not identify a business ("Smile Dental Clinic Inc." -> "smile").
