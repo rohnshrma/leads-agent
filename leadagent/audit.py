@@ -69,6 +69,21 @@ def _norm_url(url: str) -> str:
     return url
 
 
+def _www_twin(url: str) -> str:
+    """The same address with "www." added or removed ("" for an IP or a bare one-label host)."""
+    m = re.match(r"^(https?://)([^/:?#]+)(.*)$", url or "", re.I)
+    if not m:
+        return ""
+    scheme, host, rest = m.groups()
+    if host.lower().startswith("www."):
+        twin = host[4:]
+    elif host.count(".") >= 1 and not re.fullmatch(r"[\d.]+", host):
+        twin = "www." + host
+    else:
+        return ""
+    return scheme + twin + rest
+
+
 def _host(url: str) -> str:
     try:
         return (urlparse(url).hostname or "").lower().lstrip("www.")
@@ -124,6 +139,14 @@ def audit_site(url: str, cfg: dict) -> dict:
             err = e
             if attempt == 0:
                 time.sleep(2)
+    # "www.clinic.com" with no DNS record while "clinic.com" works (or the reverse) is a typo in the
+    # listing, not a dead site: try the other spelling once before calling it broken.
+    if r is None and not isinstance(err, safeurl.FetchRefused) and _www_twin(target):
+        try:
+            r = safeurl.safe_get(_www_twin(target), timeout=timeout)
+            err = None
+        except (safeurl.FetchRefused, requests.RequestException, socket.error):
+            pass
     if r is None:
         res["verdict"] = "BROKEN"
         res["http_status"] = type(err).__name__
