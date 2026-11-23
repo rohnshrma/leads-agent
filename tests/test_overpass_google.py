@@ -232,6 +232,17 @@ def test_the_mask_is_sent_on_every_request_and_the_endpoint_is_text_search():
     assert post.calls[1]["body"]["pageToken"] == "t1"
 
 
+def test_a_follow_up_page_repeats_every_parameter_of_the_first_request():
+    # Google answers 400 INVALID_ARGUMENT if anything but pageSize/pageToken differs between pages.
+    post = pager([Page([place(1)], "t1"), Page([place(2)], "t2"), Page([place(3)])])
+    g = google_places.GoogleDiscovery("k", Meter(10), post=post)
+    g.search("dental clinic", {"name": "Maple, ON", "lat": 43.85, "lng": -79.51})
+    first = {k: v for k, v in post.calls[0]["body"].items() if k not in ("pageToken", "pageSize")}
+    assert "locationBias" in first
+    for c in post.calls[1:]:
+        assert {k: v for k, v in c["body"].items() if k not in ("pageToken", "pageSize")} == first
+
+
 def test_paging_stops_at_three_pages_and_each_page_reserves_a_call():
     post = pager([Page([place(i)], f"t{i}") for i in range(1, 6)])
     meter = Meter(100)

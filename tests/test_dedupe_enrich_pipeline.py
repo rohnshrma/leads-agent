@@ -386,3 +386,95 @@ def test_leads_without_a_phone_are_kept_through_the_whole_pipeline():
     assert [b.name for b in rows] == ["Quiet Dental"]
     assert rows[0].phone_status == "missing" and s["phone"] == {"missing": 1}
     assert "no_phone" not in s["dropped"]
+
+
+def test_overture_latest_resolves_to_the_newest_published_release_once():
+    calls = []
+    def listing():
+        calls.append(1)
+        return ["2026-09-23.0", "2026-09-23.1", "2026-11-18.0", "2026-10-21.0", "not-a-release"]
+    ov = OvertureSource("latest", list_releases=listing, query=lambda n, c: [])
+    assert ov.release == "2026-11-18.0" and ov.release == "2026-11-18.0"
+    assert len(calls) == 1
+
+
+def test_overture_pinned_release_is_used_as_given_without_listing():
+    ov = OvertureSource("2026-10-21.0", list_releases=lambda: (_ for _ in ()).throw(AssertionError("listed")))
+    assert ov.release == "2026-10-21.0"
+
+
+# ---------------------------------------------------------------- lead mix (no website / bad website)
+class ListSource:
+    """Hands out a fixed list of Overture-style businesses, one batch per search."""
+    def __init__(self, batches):
+        self.batches, self.calls = list(batches), 0
+
+    def search(self, niche, city):
+        self.calls += 1
+        return self.batches.pop(0) if self.batches else []
+
+
+def _mixed_batch(tag, n_none, n_weak, n_good):
+    out = []
+    for i in range(n_none):
+        out.append(biz(f"{tag} none {i}", source="overture", website="", phone=f"905555{i:04d}", lat=43 + i / 50))
+    for i in range(n_weak):
+        out.append(biz(f"{tag} weak {i}", source="overture", website=f"https://weak{tag}{i}.ca",
+                       phone=f"905666{i:04d}", lat=44 + i / 50))
+    for i in range(n_good):
+        out.append(biz(f"{tag} good {i}", source="overture", website=f"https://good{tag}{i}.ca",
+                       phone=f"905777{i:04d}", lat=45 + i / 50))
+    return out
+
+
+def mix_audit(url, cfg):
+    if not url:
+        return {"verdict": "NO_WEBSITE"}
+    if "good" in url:
+        return {"verdict": "OK", "https": True, "mobile_friendly": True, "load_seconds": 1,
+                "has_meta_description": True, "title": "x"}
+    return {"verdict": "WEAK", "https": False, "mobile_friendly": False, "load_seconds": 1,
+            "has_meta_description": False, "title": "x"}
+
+
+MIX_CFG = {**CFG, "min_score_to_report": 0, "discovery": ["overture"], "google_verify": {"enabled": False},
+           "lead_mix": {"no_website": 3, "bad_website": 2}}
+
+
+def test_good_websites_are_never_reported_and_each_bucket_is_capped():
+    src = ListSource([_mixed_batch("a", 6, 5, 4)])
+    with mock.patch("leadagent.pipeline.audit.audit_site", side_effect=mix_audit), \
+            mock.patch("leadagent.safeurl.safe_get", side_effect=safeurl.FetchRefused("n/a")):
+        rows, summary = pipeline.run(MIX_CFG, AREAS[:1], sources={"overture": src}, budget=Meter(0))
+    kinds = [pipeline.bucket_of(b) for b in rows]
+    assert kinds.count("no_website") == 3 and kinds.count("bad_website") == 2
+    assert all(b.lead_type != "HAS GOOD SITE" for b in rows)
+    assert summary["dropped"]["good_site"] == 4 and summary["mix"] == {"no_website": 3, "bad_website": 2}
+
+
+def test_searching_stops_once_both_buckets_are_full():
+    src = ListSource([_mixed_batch(t, 5, 4, 1) for t in "abcdef"])
+    pairs = [("dental clinic", {"name": f"Area {i}, ON", "lat": 43.2, "lng": -79.8}) for i in range(6)]
+    with mock.patch("leadagent.pipeline.audit.audit_site", side_effect=mix_audit), \
+            mock.patch("leadagent.safeurl.safe_get", side_effect=safeurl.FetchRefused("n/a")):
+        rows, summary = pipeline.run(MIX_CFG, pairs, sources={"overture": src}, budget=Meter(0))
+    assert src.calls == 1                                   # the first area already filled both buckets
+    assert summary["stopped_early"] == "lead targets reached"
+    assert summary["pairs"]["not_run"] == 5                 # the rest stays in the queue
+
+
+def test_googles_website_grades_a_merged_lead_but_is_never_exported():
+    stored = biz("Maple Chiro", source="overture", sid="ov9", website="", phone="9055551234")
+    g = biz("Maple Chiro", source="google", sid="ChIJm1", pid="ChIJm1", website="https://maplechiro-good.ca",
+            phone="9055551234")
+    g.from_google = True
+    src = ListSource([[stored, g]])
+    cfg = {**MIX_CFG, "lead_mix": {}}
+    with mock.patch("leadagent.pipeline.audit.audit_site", side_effect=mix_audit), \
+            mock.patch("leadagent.safeurl.safe_get", side_effect=safeurl.FetchRefused("n/a")):
+        rows, summary = pipeline.run(cfg, AREAS[:1], sources={"overture": src}, budget=Meter(0))
+    assert rows == [] and summary["dropped"]["good_site"] == 1     # it has a good site: not a "NO WEBSITE" lead
+    merged, _ = dedupe.merge([biz("A", source="overture", sid="o1", phone="9055550000"),
+                              biz("A", source="google", sid="g1", pid="g1", website="https://a.ca", phone="9055550000")])
+    assert merged[0].google_site == "https://a.ca"
+    assert "a.ca" not in json.dumps(pipeline.to_row(merged[0], cfg))

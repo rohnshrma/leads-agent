@@ -75,11 +75,13 @@ class GoogleDiscovery:
                 "regionCode": "CA",
                 "includePureServiceAreaBusinesses": True,
             }
-            if token:
-                body["pageToken"] = token
-            if city.get("lat") is not None and city.get("lng") is not None and not token:
+            # Google rejects a follow-up page (HTTP 400 INVALID_ARGUMENT) unless every parameter other than
+            # pageSize/pageToken matches the first request, so locationBias goes on every page.
+            if city.get("lat") is not None and city.get("lng") is not None:
                 body["locationBias"] = {"circle": {"center": {"latitude": city["lat"], "longitude": city["lng"]},
                                                    "radius": 35000.0}}
+            if token:
+                body["pageToken"] = token
             self.calls += 1
             try:
                 r = self._post(

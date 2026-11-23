@@ -15,6 +15,7 @@ Rules this module enforces:
 
 from __future__ import annotations
 
+import copy
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -26,6 +27,26 @@ from .sources import Business, DeadlineReached
 
 TIME_LIMIT_SECONDS = 40 * 60
 SOURCE_ORDER = ("google", "overture", "overpass")
+
+# What we sell to each kind of lead. A business with a good website is never reported.
+NO_WEBSITE_TYPES = ("NO WEBSITE", "SOCIAL ONLY")                     # build them a website
+BAD_WEBSITE_TYPES = ("BROKEN SITE", "PLACEHOLDER", "WEAK SITE")       # rebuild, SEO, CRM
+
+
+def bucket_of(b) -> str:
+    """'no_website', 'bad_website' or '' (a good site, or not graded) for a scored Business."""
+    if b.lead_type in NO_WEBSITE_TYPES:
+        return "no_website"
+    if b.lead_type in BAD_WEBSITE_TYPES:
+        return "bad_website"
+    return ""
+
+
+def lead_mix(cfg: dict) -> dict:
+    """{"no_website": n, "bad_website": n} from config `lead_mix`; {} means no per-run targets."""
+    m = cfg.get("lead_mix") or {}
+    out = {k: int(m[k]) for k in ("no_website", "bad_website") if m.get(k) not in (None, "")}
+    return {k: v for k, v in out.items() if v > 0}
 
 # The only fields a Google-sourced lead is saved with. Everything else Google said stays in memory.
 GOOGLE_ROW_FIELDS = (
@@ -58,7 +79,7 @@ def to_row(b: Business, cfg: dict) -> dict:
     return row
 
 
-def _discover(cfg: dict, pairs: list, sources: dict, deadline: float, summary: dict) -> list[Business]:
+def _discover(cfg: dict, pairs: list, sources: dict, deadline: float, summary: dict, enough=None) -> list[Business]:
     found: list[Business] = []
     per = summary["sources"]
     status = ["not_run"] * len(pairs)
@@ -98,6 +119,9 @@ def _discover(cfg: dict, pairs: list, sources: dict, deadline: float, summary: d
         if stop:
             break
         status[i] = "completed" if ok else "failed"
+        if enough is not None and enough(found):
+            summary["stopped_early"] = "lead targets reached"
+            break
     summary["pairs"] = {"planned": len(pairs), "completed": status.count("completed"),
                         "failed": status.count("failed"), "not_run": status.count("not_run")}
     summary["pair_status"] = status
@@ -111,33 +135,23 @@ def _discover(cfg: dict, pairs: list, sources: dict, deadline: float, summary: d
     return found
 
 
-def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, include_seen: bool = False,
-        time_limit: float = TIME_LIMIT_SECONDS, fetch=None, clock=time.monotonic) -> tuple[list[Business], dict]:
-    """Execute one fetch. Returns (businesses that pass the score threshold, summary)."""
-    start = clock()
-    deadline = start + time_limit
-    summary: dict = {
-        "sources": {n: {"found": 0, "failed": 0, "calls": 0} for n in SOURCE_ORDER},
-        "failures": [], "notes": [], "dropped": Counter(), "merge": {}, "phone": {},
-        "google_check": {}, "enrich": {},
-    }
-    found = _discover(cfg, pairs, sources, deadline, summary)
-    summary["found_total"] = len(found)
-
-    # --- merge the same business seen by different sources (in memory) --------------------------
+def _classify(cfg: dict, found: list, *, ledger, include_seen: bool, deadline: float, summary: dict,
+              audits: dict) -> list[Business]:
+    """merge -> already-seen -> quality filters -> website audit -> score. Audits are cached by URL in
+    `audits`, so classifying again (to check the lead targets) never fetches a site twice."""
     merged, mstats = dedupe.merge(found)
     summary["merge"] = mstats
-
-    # --- already seen on an earlier run (ledger) ------------------------------------------------
-    fresh, seen = [], 0
+    fresh, seen, no_id = [], 0, 0
     for b in merged:
         if not b.source_id:
-            summary["dropped"]["no_id"] += 1
+            no_id += 1
             continue
         if include_seen or ledger is None or ledger.is_new(b.source_id):
             fresh.append(b)
         else:
             seen += 1
+    if no_id:
+        summary["dropped"]["no_id"] = no_id
     summary["dropped"]["already_seen"] = seen
 
     # --- free quality filters: chains out; a missing phone is KEPT and marked --------------------
@@ -145,21 +159,59 @@ def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, i
     summary["dropped"]["chain"] = qrep["chains"]
     summary["website_inferred"] = qrep["website_inferred"]
 
-    # --- audit websites, then score --------------------------------------------------------------
+    # --- audit websites, then score. Google's website (memory only) is graded when the stored record has none.
+    def site_of(b):
+        return b.website or getattr(b, "google_site", "")
+
     if cfg.get("website_audit", {}).get("enabled", True):
-        todo = [b for b in fresh if time.monotonic() < deadline]
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(lambda b: audit.audit_site(b.website, cfg), todo))
-        for b, a in zip(todo, results):
-            b.audit = a
-        for b in fresh[len(todo):]:
-            b.audit = {"verdict": "NO_WEBSITE" if not b.website else "OK"}
+        todo = list(dict.fromkeys(site_of(b) for b in fresh if site_of(b) and site_of(b) not in audits))
+        if todo and time.monotonic() < deadline:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                for url, a in zip(todo, pool.map(lambda u: audit.audit_site(u, cfg), todo)):
+                    audits[url] = a
+        for b in fresh:
+            url = site_of(b)
+            if not url:
+                b.audit = audit.audit_site("", cfg)
+            else:
+                b.audit = audits.get(url) or {"verdict": "OK"}     # not checked before the time limit
     else:
         for b in fresh:
-            b.audit = {"verdict": "NO_WEBSITE" if not b.website else "OK"}
+            b.audit = {"verdict": "NO_WEBSITE" if not site_of(b) else "OK"}
     for b in fresh:
         audit.score(b, cfg)
+        if not b.website and getattr(b, "google_site", ""):
+            b.reasons.append("Website graded from Google's listing (the map data lacked it)")
         b.fetched_at = b.fetched_at or now_iso()
+    return fresh
+
+
+def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, include_seen: bool = False,
+        time_limit: float = TIME_LIMIT_SECONDS, fetch=None, clock=time.monotonic) -> tuple[list[Business], dict]:
+    """Execute one fetch. Returns (businesses to report, summary)."""
+    start = clock()
+    deadline = start + time_limit
+    summary: dict = {
+        "sources": {n: {"found": 0, "failed": 0, "calls": 0} for n in SOURCE_ORDER},
+        "failures": [], "notes": [], "dropped": Counter(), "merge": {}, "phone": {},
+        "google_check": {}, "enrich": {},
+    }
+    threshold = cfg.get("min_score_to_report", 40)
+    targets = lead_mix(cfg)
+    audits: dict = {}
+
+    def enough(found_so_far: list) -> bool:
+        """After each area/type pair: stop searching once every bucket has its target, plus a little
+        spare because the Google check can still re-grade a few."""
+        trial = _classify(cfg, copy.deepcopy(found_so_far), ledger=ledger, include_seen=include_seen,
+                          deadline=deadline, summary={"dropped": Counter()}, audits=audits)
+        have = Counter(bucket_of(b) for b in trial if b.opportunity_score >= threshold)
+        return all(have[k] >= v + max(1, v // 4) for k, v in targets.items())
+
+    found = _discover(cfg, pairs, sources, deadline, summary, enough=enough if targets else None)
+    summary["found_total"] = len(found)
+    fresh = _classify(cfg, found, ledger=ledger, include_seen=include_seen, deadline=deadline,
+                      summary=summary, audits=audits)
 
     # --- phone enrichment, then the Google check, on the same budget ------------------------------
     verifier = google_verify.build(cfg, budget) if sources.get("google") is not None else None
@@ -168,17 +220,29 @@ def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, i
         fresh, pool, verifier, fetch=fetch or enrich.safeurl.safe_get,
         should_stop=lambda: time.monotonic() >= deadline)
 
-    threshold = cfg.get("min_score_to_report", 40)
     if verifier is not None:
-        cands = sorted((b for b in fresh if b.opportunity_score >= threshold), key=lambda b: -b.opportunity_score)
+        cands = sorted((b for b in fresh if b.opportunity_score >= threshold and bucket_of(b)),
+                       key=lambda b: -b.opportunity_score)
         summary["google_check"] = verifier.run(cands)
         if verifier.budget_reached:
             summary["notes"].append("Google call budget reached during the check")
         per = summary["sources"]["google"]
         per["calls"] += verifier.calls_this_run
 
-    reported = sorted((b for b in fresh if b.opportunity_score >= threshold), key=lambda b: -b.opportunity_score)
-    summary["dropped"]["below_min_score"] = len(fresh) - len(reported)
+    ranked = sorted(fresh, key=lambda b: -b.opportunity_score)
+    reported, taken = [], Counter()
+    for b in ranked:
+        kind = bucket_of(b)
+        if not kind:
+            summary["dropped"]["good_site"] += 1                 # a good website: nothing to sell them
+        elif b.opportunity_score < threshold:
+            summary["dropped"]["below_min_score"] += 1
+        elif targets and taken[kind] >= targets.get(kind, 0):
+            summary["dropped"]["over_target"] += 1
+        else:
+            taken[kind] += 1
+            reported.append(b)
+    summary["mix"] = dict(taken)
     summary["reported"] = len(reported)
     summary["phone"] = dict(Counter((b.phone_status or ("found" if b.phone else "missing")) for b in reported))
     summary["dropped"] = dict(summary["dropped"])

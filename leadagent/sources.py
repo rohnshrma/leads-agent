@@ -390,13 +390,38 @@ class OverpassSource:
 class OvertureSource:
     """Query Overture's public GeoParquet with DuckDB over a bbox."""
 
-    def __init__(self, release: str = "2026-08-19.0", max_places: int = 100, cache_dir: str | None = None,
-                 query=None):
-        self.release = release
+    RELEASES_URL = "https://overturemaps-us-west-2.s3.amazonaws.com/?list-type=2&prefix=release/&delimiter=/"
+
+    def __init__(self, release: str = "latest", max_places: int = 100, cache_dir: str | None = None,
+                 query=None, list_releases=None):
+        # Overture deletes releases after a few months, so a pinned one eventually fails every query.
+        # "latest" (the default) is resolved once, on first use, to the newest release still published.
+        self._release = (release or "latest").strip()
+        self._list_releases = list_releases     # injected in tests so nothing is downloaded
         self.max_places = int(max_places)
         self.cache_dir = cache_dir          # open data only (Overture's licence allows keeping it)
         self._query_fn = query              # injected in tests so nothing is downloaded
         self._con = None
+
+    @property
+    def release(self) -> str:
+        if self._release.lower() == "latest":
+            self._release = self._newest_release()
+        return self._release
+
+    def _newest_release(self) -> str:
+        import re
+        if self._list_releases is not None:
+            names = list(self._list_releases())
+        else:
+            import requests
+            r = requests.get(self.RELEASES_URL, timeout=30)
+            r.raise_for_status()
+            names = re.findall(r"<Prefix>release/([^/<]+)/</Prefix>", r.text)
+        names = [n for n in names if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.\d+", n)]
+        if not names:
+            raise RuntimeError("no Overture release is published")
+        return max(names, key=lambda n: (n.split(".")[0], int(n.split(".")[1])))
 
     def _con_get(self):
         if self._con is None:
@@ -542,7 +567,7 @@ def build_source(cfg: dict):
 
 def build_overture(cfg: dict) -> "OvertureSource":
     o = cfg.get("overture") or {}
-    return OvertureSource(cfg.get("overture_release", "2026-08-19.0"), o.get("max_places", 100),
+    return OvertureSource(cfg.get("overture_release", "latest"), o.get("max_places", 100),
                           cache_dir=o.get("cache_dir", "cache/overture"))
 
 

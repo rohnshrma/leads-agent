@@ -43,7 +43,7 @@ overture:
   max_places: 100
   cache_dir: cache/overture   # open data only; cached between runs by the workflow
 
-overture_release: "2026-08-19.0"
+overture_release: "latest"     # newest published release; Overture deletes old ones after a few months
 google_api_key_env: "GOOGLE_MAPS_API_KEY"
 
 # ---- WHERE TO HUNT -----------------------------------------
