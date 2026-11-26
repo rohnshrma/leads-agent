@@ -47,6 +47,23 @@ DEFAULT_CHAIN_NAMES = [
     "altima dental", "medrehab", "pt health", "cornerstone physiotherapy",
     "physio pmr", "kinatex", "skin vitality", "dermapure", "laser clinics canada", "lasik md", "lasikmd",
     "walmart vision", "costco optical", "banfield", "vca canada", "vca animal",
+    # India (Delhi NCR first): national chains and franchises in the business types hunted there
+    "clove dental", "sabka dentist", "apollo white", "partha dental", "fms dental", "dentzz", "my dentist",
+    "apollo", "fortis", "max healthcare", "medanta", "artemis", "manipal hospital", "narayana health",
+    "kaya skin", "kaya clinic", "vlcc", "oliva", "dr batra", "dr. batra", "advanced grohair", "berkowits",
+    "richfeel", "enrich salon", "lakme", "jawed habib", "looks salon",
+    "lenskart", "titan eye", "eyeplus", "dr agarwal", "dr. agarwal", "vasan eye", "centre for sight",
+    "sankara nethralaya", "eye-q", "eye q super", "sharp sight", "specsmakers", "gkb opticals",
+    "aakash", "allen career", "allen kota", "fiitjee", "resonance", "pw vidyapeeth", "physics wallah",
+    "narayana", "sri chaitanya", "vidyamandir", "byju", "vedantu", "career launcher", "made easy",
+    "vajiram", "drishti ias", "chanakya ias", "akash institute", "motion education", "unacademy",
+    "kidzee", "eurokids", "euro kids", "podar jumbo", "bachpan", "little millennium", "shemrock",
+    "firstcry intellitots", "mothers pride", "mother's pride", "klay", "footprints childcare", "hello kids",
+    "cult.fit", "cultfit", "cult fit", "gold's gym", "golds gym", "snap fitness", "f45", "fitness first",
+    "talwalkars", "powerhouse gym", "anytime fitness",
+    "livspace", "homelane", "design cafe", "designcafe", "bonito designs", "decorpot", "asian paints beautiful",
+    "square yards", "nobroker", "magicbricks", "housing.com", "99acres", "propertypistol", "anarock",
+    "supertails", "petsy", "max vets", "cessna lifeline", "physiotattva", "qi spine", "reliva", "portea",
 ]
 
 # A franchise location often has its own name but the head office's website.
@@ -56,6 +73,14 @@ CHAIN_DOMAINS = {
     "hakimoptical.ca", "walmart.ca", "costco.ca", "petsmart.ca", "massageenvy.com", "handandstone.ca",
     "thejoint.com", "banfield.com", "vcacanada.com", "physiomed.com", "pearlevision.ca",
     "theodoreandpringle.ca", "fyidoctors.com", "iris.ca", "loblaw.ca", "nofrills.ca",
+    # India
+    "clovedental.in", "sabkadentist.com", "apollowhitedental.com", "apollohospitals.com", "apollo247.com",
+    "fortishealthcare.com", "maxhealthcare.in", "medanta.org", "kaya.in", "vlccwellness.com", "olivaclinic.com",
+    "drbatras.com", "lenskart.com", "titaneyeplus.com", "dragarwal.com", "vasaneye.in", "aakash.ac.in",
+    "allen.ac.in", "fiitjee.com", "resonance.ac.in", "pw.live", "narayanagroup.com", "srichaitanya.net",
+    "vidyamandir.com", "byjus.com", "kidzee.com", "eurokidsindia.com", "podarjumbokids.com", "cult.fit",
+    "goldsgym.in", "anytimefitness.in", "livspace.com", "homelane.com", "designcafe.com", "squareyards.com",
+    "nobroker.in", "supertails.com", "physiotattva.com", "qispine.com", "reliva.in",
 }
 
 # Words that do not identify a business ("Smile Dental Clinic Inc." -> "smile").

@@ -44,15 +44,26 @@ def load_cfg(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def todays_pairs(cfg: dict, n: int) -> list[tuple[str, dict]]:
-    """Old local rotation, used only when the CRM's queue cannot be reached."""
-    cities, niches = cfg["cities"], cfg["niches"]
-    pairs = [(nq, c) for c in cities for nq in niches]
-    seed = date.today().toordinal()
+def _rotate(pairs: list, n: int, seed: int) -> list:
+    pairs = list(pairs)
     random.Random(seed).shuffle(pairs)
     offset = (seed * n) % max(len(pairs), 1)
-    rotated = pairs[offset:] + pairs[:offset]
-    return rotated[:n]
+    return (pairs[offset:] + pairs[:offset])[:n]
+
+
+def todays_pairs(cfg: dict, n: int, seed: int | None = None) -> list[tuple[str, dict]]:
+    """The local rotation: used when the CRM's queue is not used (any market but Canada) or cannot be reached.
+    Areas marked `priority: true` get `priority_share` of the run (India: Gurgaon first), the rest share the remainder."""
+    cities, niches = cfg["cities"], cfg["niches"]
+    seed = date.today().toordinal() if seed is None else seed
+    top = [(nq, c) for c in cities if c.get("priority") for nq in niches]
+    rest = [(nq, c) for c in cities if not c.get("priority") for nq in niches]
+    if not top or not rest:
+        return _rotate(top + rest, n, seed)
+    share = min(max(float(cfg.get("priority_share", 0.7)), 0.0), 1.0)
+    k = min(len(top), round(n * share))
+    picked = _rotate(top, k, seed) + _rotate(rest, n - k, seed)
+    return picked[:n]
 
 
 SAMPLE = [
@@ -88,7 +99,7 @@ def build_sources(cfg: dict, budget, dry_run: bool, deadline: float) -> dict:
         key = os.environ.get(cfg.get("google_api_key_env", "GOOGLE_MAPS_API_KEY"), "").strip()
         if key:
             from leadagent.sources import search_radius_km
-            out["google"] = GoogleDiscovery(key, budget, radius_km=search_radius_km(cfg))
+            out["google"] = GoogleDiscovery(key, budget, radius_km=search_radius_km(cfg), country=cfg.get("country", "CA"))
         else:
             print("Google Places is not used: no API key is set")
     if "overture" in wanted:
@@ -119,6 +130,8 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_cfg(Path(args.config))
+    from leadagent import phones
+    phones.use_country(cfg.get("country"))     # Indian numbers in an India run, North American otherwise
     try:
         cfg, area_pairs = fetch_options.apply_options(
             cfg, area=args.area, radius=args.radius_km, niches_csv=args.niches, min_score=args.min_score)

@@ -18,7 +18,7 @@ import sys
 import urllib.error
 import urllib.request
 
-COUNTRY_OF_MARKET = {"us": "US", "ca": "CA"}
+COUNTRY_OF_MARKET = {"us": "US", "ca": "CA", "in": "IN"}
 
 
 def decide(event_name: str, market: str, config: dict | None) -> tuple[bool, str]:

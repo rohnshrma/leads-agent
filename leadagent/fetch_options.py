@@ -111,8 +111,9 @@ def match_configured_city(area: str, cities: list[dict]) -> dict | None:
     for c in cities:
         full = _norm(c["name"])
         head = _norm(c["name"].split(",")[0])
-        if want in (full, head):
-            return c
+        aliases = {_norm(a) for a in (c.get("aliases") or [])}
+        if want in (full, head) or want in aliases:
+            return {k: v for k, v in c.items() if k in ("name", "lat", "lng")}
     return None
 
 

@@ -1,5 +1,16 @@
 # Changes: lead pipeline upgrade (leads-agent)
 
+## 2026-11-26: India (the owner's own market), Gurgaon first
+- `config-in.yaml`: country IN, 9 Gurgaon areas marked `priority: true` then 14 Delhi NCR areas, 6 km radius,
+  11 business types with exact Overture categories, Indian directory sites (Justdial, Practo, Sulekha...) count as no website.
+- `priority_share` (0.7): runs with no typed area spend 70% of their searches on Gurgaon and 30% on the rest of NCR
+  (`todays_pairs` in run.py; India does not use the CRM's Canadian queue).
+- Phones: `phones.use_country("IN")` reads Indian numbers (+91, STD landlines); Canadian runs are unchanged.
+- Google Text Search uses the run's country (`"... in Sohna Road, Gurugram, India"`, regionCode IN).
+- Indian chains and franchises skipped (Clove Dental, Lenskart, Aakash, Kidzee, cult.fit, Livspace and more).
+- Business-type check by name for the Indian types; typed areas match aliases ("Gurgaon" -> Gurugram).
+- Workflow: `market: in` runs `config-in.yaml`. Tests: `tests/test_india.py`.
+
 ## What changed
 - **Sources:** Google Places (Text Search, only inside a shared call budget kept by the CRM backend), then Overture on every fetch (cached per area), then OpenStreetMap. Merged and de-duplicated in memory by place id, phone, website domain, then name within 75 m (branches more than 5 km apart are never merged).
 - **Google data is held in memory only.** A Google lead leaves the agent as place_id, source, score, type and time. The field mask is exactly the approved list; a test fails if it changes.

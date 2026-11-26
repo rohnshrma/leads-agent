@@ -32,6 +32,17 @@ NAME_WORDS: list[tuple[str, str]] = [
     ("dermatology clinic", r"derma"),
     ("med spa", r"med(ical)? ?spa|medi ?spa|aesthetic|laser|botox|injector|skin|cosmetic (clinic|surgery)"),
     ("psychology clinic", r"psycholog|psychotherap|counsel|mental health"),
+    # India (config-in.yaml). Each only counts when it is one of the types chosen for the run.
+    ("orthodontist", r"ortho(?!tic|p(a|e)d)|braces|aligner"),
+    ("eye clinic", r"\beyes?\b|vision|optic|ophthal|netra|lasik|retina|cataract"),
+    ("skin and hair clinic", r"\bskin|derma|\bhair\b|tricho|cosmet|laser|aesthetic|glow"),
+    ("physiotherapist", r"physio|rehab|physical therap|spine|sports? injur"),
+    ("veterinary clinic", r"\bvets?\b|veterin|animal|\bpets?\b|canine"),
+    ("coaching institute", r"coaching|classes|tutorial|tuition|academy|institute|ielts|\bpte\b|neet|\bjee\b|\biit\b|study|career|learning|edu"),
+    ("preschool", r"pre-?school|play ?school|playway|montessori|nursery|kinder|kids|daycare|day care|creche|little"),
+    ("interior designer", r"interior|decor|design studio|modular|furnish|\bspaces?\b|\bdesigns?\b"),
+    ("gym fitness studio", r"\bgym|fitness|crossfit|workout|muscle|strength|zumba|pilates|\bfit\b"),
+    ("real estate agent", r"real ?estate|realty|realtors?|propert|estates?\b|\bhomes?\b|infra|buildwell|land ?mark"),
 ]
 
 # Weak name words: used only when Google's types say nothing ("Therapy Point" with Google type
@@ -49,6 +60,16 @@ GOOGLE_TYPES: dict[str, set[str]] = {
     "podiatrist": {"foot_care"},
     "veterinary clinic": {"veterinary_care"},
     "med spa": {"skin_care_clinic"},
+    # India
+    "orthodontist": {"dentist", "dental_clinic"},
+    "skin and hair clinic": {"skin_care_clinic"},
+    "physiotherapist": {"physiotherapist"},
+    "veterinary clinic": {"veterinary_care"},
+    "preschool": {"preschool", "child_care_agency"},
+    "gym fitness studio": {"gym", "fitness_center"},
+    "real estate agent": {"real_estate_agency"},
+    "interior designer": {"interior_designer"},
+    "coaching institute": {"educational_institution", "tutoring_service"},
 }
 
 # Types that mean "not a business we sell to" unless the name says otherwise.
