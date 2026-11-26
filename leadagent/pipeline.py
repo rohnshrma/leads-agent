@@ -42,6 +42,26 @@ def bucket_of(b) -> str:
     return ""
 
 
+def per_search_cap(cfg: dict) -> int:
+    """At most this many reported leads from one type + area search (0 = no limit), so one rich search
+    (20 skin clinics in DLF) does not fill the whole run."""
+    return int((cfg.get("lead_mix") or {}).get("max_per_search", 0) or 0)
+
+
+def capped(leads: list, cap: int) -> list:
+    """Best-first leads with at most `cap` per search."""
+    if not cap:
+        return list(leads)
+    n, out = Counter(), []
+    for b in leads:
+        k = getattr(b, "search_pair", "")
+        if k and n[k] >= cap:
+            continue
+        n[k] += 1
+        out.append(b)
+    return out
+
+
 def lead_mix(cfg: dict) -> dict:
     """{"no_website": n, "bad_website": n} from config `lead_mix`; {} means no per-run targets."""
     m = cfg.get("lead_mix") or {}
@@ -89,6 +109,7 @@ def _discover(cfg: dict, pairs: list, sources: dict, deadline: float, summary: d
             break
         ok = True
         stop = False
+        start_len = len(found)
         for name in SOURCE_ORDER:
             src = sources.get(name)
             if src is None:
@@ -116,6 +137,8 @@ def _discover(cfg: dict, pairs: list, sources: dict, deadline: float, summary: d
                 continue
             per[name]["found"] += len(got)
             found.extend(got)
+        for b in found[start_len:]:
+            b.search_pair = f"{niche}|{city.get('name', '')}"   # memory only: which search found it
         if stop:
             break
         status[i] = "completed" if ok else "failed"
@@ -221,6 +244,7 @@ def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, i
     }
     threshold = cfg.get("min_score_to_report", 40)
     targets = lead_mix(cfg)
+    cap = per_search_cap(cfg)
     audits: dict = {}
 
     def enough(found_so_far: list) -> bool:
@@ -228,7 +252,9 @@ def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, i
         spare because the Google check can still re-grade a few."""
         trial = _classify(cfg, copy.deepcopy(found_so_far), ledger=ledger, include_seen=include_seen,
                           deadline=deadline, summary={"dropped": Counter()}, audits=audits)
-        have = Counter(bucket_of(b) for b in trial if b.opportunity_score >= threshold)
+        good = sorted((b for b in trial if b.opportunity_score >= threshold and bucket_of(b)),
+                      key=lambda b: -b.opportunity_score)
+        have = Counter(bucket_of(b) for b in capped(good, cap))
         return all(have[k] >= v + max(1, v // 4) for k, v in targets.items())
 
     found = _discover(cfg, pairs, sources, deadline, summary, enough=enough if targets else None)
@@ -253,7 +279,7 @@ def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, i
         per["calls"] += verifier.calls_this_run
 
     ranked = sorted(fresh, key=lambda b: -b.opportunity_score)
-    reported, taken = [], Counter()
+    reported, taken, per_search = [], Counter(), Counter()
     share = float((cfg.get("lead_mix") or {}).get("max_broken_share", 1.0))
     max_broken = int(targets.get("bad_website", 0) * share)
     for b in ranked:
@@ -266,11 +292,14 @@ def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, i
             summary["dropped"]["below_min_score"] += 1
         elif targets and taken[kind] >= targets.get(kind, 0):
             summary["dropped"]["over_target"] += 1
+        elif cap and getattr(b, "search_pair", "") and per_search[b.search_pair] >= cap:
+            summary["dropped"]["over_search_share"] += 1        # room for other types and areas
         elif kind == "bad_website" and b.lead_type == "BROKEN SITE" and targets.get("bad_website") \
                 and taken["broken"] >= max_broken:
             summary["dropped"]["broken_over_share"] += 1        # keep room for weak sites (SEO / CRM pitch)
         else:
             taken[kind] += 1
+            per_search[getattr(b, "search_pair", "")] += 1
             if b.lead_type == "BROKEN SITE":
                 taken["broken"] += 1
             reported.append(b)
@@ -278,7 +307,14 @@ def run(cfg: dict, pairs: list, *, sources: dict, budget: Budget, ledger=None, i
     if targets.get("bad_website"):
         spare = targets["bad_website"] - taken["bad_website"]
         for b in [b for b in ranked if b.lead_type == "BROKEN SITE" and b not in reported
-                  and b.opportunity_score >= threshold][:max(spare, 0)]:
+                  and b.opportunity_score >= threshold]:
+            if spare <= 0:
+                break
+            k = getattr(b, "search_pair", "")
+            if cap and k and per_search[k] >= cap:
+                continue
+            spare -= 1
+            per_search[k] += 1
             reported.append(b)
             taken["bad_website"] += 1
             taken["broken"] += 1

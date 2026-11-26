@@ -28,6 +28,9 @@ FREE_EMAIL_DOMAINS = {
     "shaw.ca", "rogers.com", "sympatico.ca", "bell.net", "telus.net", "videotron.ca",
     "cogeco.ca", "eastlink.ca", "mts.net", "sasktel.net", "execulink.com", "nbnet.nb.ca",
     "comcast.net", "verizon.net", "att.net", "sbcglobal.net", "cox.net", "charter.net",
+    # Indian mailbox providers
+    "rediffmail.com", "rediff.com", "yahoo.co.in", "yahoo.in", "hotmail.co.in", "outlook.in",
+    "live.in", "gmail.co.in", "sify.com", "vsnl.net", "vsnl.com", "airtelmail.in", "zohomail.in",
 }
 
 # Well-known chains and franchises in the niches the finder hunts. Extend in config:
@@ -48,7 +51,7 @@ DEFAULT_CHAIN_NAMES = [
     "physio pmr", "kinatex", "skin vitality", "dermapure", "laser clinics canada", "lasik md", "lasikmd",
     "walmart vision", "costco optical", "banfield", "vca canada", "vca animal",
     # India (Delhi NCR first): national chains and franchises in the business types hunted there
-    "clove dental", "sabka dentist", "apollo white", "partha dental", "fms dental", "dentzz", "my dentist",
+    "pristyn care", "pristyncare", "clove dental", "sabka dentist", "apollo white", "partha dental", "fms dental", "dentzz", "my dentist",
     "apollo", "fortis", "max healthcare", "medanta", "artemis", "manipal hospital", "narayana health",
     "kaya skin", "kaya clinic", "vlcc", "oliva", "dr batra", "dr. batra", "advanced grohair", "berkowits",
     "richfeel", "enrich salon", "lakme", "jawed habib", "looks salon",
@@ -74,7 +77,7 @@ CHAIN_DOMAINS = {
     "thejoint.com", "banfield.com", "vcacanada.com", "physiomed.com", "pearlevision.ca",
     "theodoreandpringle.ca", "fyidoctors.com", "iris.ca", "loblaw.ca", "nofrills.ca",
     # India
-    "clovedental.in", "sabkadentist.com", "apollowhitedental.com", "apollohospitals.com", "apollo247.com",
+    "pristyncare.com", "clovedental.in", "sabkadentist.com", "apollowhitedental.com", "apollohospitals.com", "apollo247.com",
     "fortishealthcare.com", "maxhealthcare.in", "medanta.org", "kaya.in", "vlccwellness.com", "olivaclinic.com",
     "drbatras.com", "lenskart.com", "titaneyeplus.com", "dragarwal.com", "vasaneye.in", "aakash.ac.in",
     "allen.ac.in", "fiitjee.com", "resonance.ac.in", "pw.live", "narayanagroup.com", "srichaitanya.net",

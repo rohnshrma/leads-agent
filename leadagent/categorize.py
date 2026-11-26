@@ -3,7 +3,9 @@ Check that a Google result really is the business type we searched for.
 
 Google's Text Search answers "dental clinic in Maple" with whatever it thinks is related: a therapist, an allergy
 clinic, an optical shop. The lead's type picks the mockup layout, so a wrong type means a wrong mockup.
-Overture results are already matched on exact categories (sources.py), so only Google results are checked.
+Overture results are already matched on exact categories (sources.py), so they are relabelled when the name plainly says
+another of the run's types (a dental clinic filed under dermatology), and dropped only when the name says
+another trade altogether (an events company filed under a spa category).
 
 Evidence, strongest first:
   1. the business name ("Millrose Chiropractic" is a chiropractor whatever we searched for);
@@ -80,6 +82,12 @@ NOT_OURS = {
     "pet_boarding_service", "tanning_studio", "sauna",
 }
 
+# Names that plainly say "another trade". Overture files a few of these under our categories
+# ("Example Corporate Events" under a spa category); unless the name also says our type, they are dropped.
+OTHER_TRADE = re.compile(r"\bevents?\b|event management|wedding|catering|\bcaterers\b|\btravels?\b|\btours?\b|\brestaurant\b|"
+                         r"\bcafe\b|\bhotels?\b|\bbanquet\b|photograph|\bmotors\b|\bgarage\b|\bboutique\b|jewel|"
+                         r"\btailor\b|\bsweets\b|\bbakery\b|\bchemist\b|\bpharmacy\b|\bmedicos?\b", re.I)
+
 _COMPILED = [(n, re.compile(p, re.I)) for n, p in NAME_WORDS]
 _WEAK = [(n, re.compile(p, re.I)) for n, p in WEAK_NAME_WORDS]
 
@@ -123,11 +131,22 @@ def apply(found: list, cfg: dict) -> tuple[list, dict]:
     """Check every Google result; relabel or drop the ones that are not what was searched for."""
     wanted = [n.lower() for n in (cfg.get("niches") or [])]
     report = {"wrong_category": 0, "relabelled": 0}
+    drop_other = bool(cfg.get("drop_other_trades", False))   # on in config-in.yaml
     if not wanted:
         return found, report
     out = []
     for b in found:
         if b.source != "google":
+            # Overture matched an exact category, so it is never dropped; but a name that plainly says another
+            # chosen type wins ("Example Family Dental" filed under dermatology is a dental lead).
+            q = (b.niche_query or "").lower()
+            by_name = [n for n in name_niches(b.name) if n in wanted]
+            if q and by_name and q not in by_name:
+                report["relabelled"] += 1
+                b.niche_query = by_name[0]
+            elif drop_other and not by_name and OTHER_TRADE.search(b.name or ""):
+                report["wrong_category"] += 1
+                continue
             out.append(b)
             continue
         verdict, niche = decide(b, wanted)

@@ -91,6 +91,20 @@ def _host(url: str) -> str:
         return ""
 
 
+def _broken_reason(err) -> str:
+    """Words a caller can repeat to the owner, instead of an exception name."""
+    msg = str(err or "")
+    if msg == "host does not resolve":
+        return "the web address no longer exists"
+    if msg == "host is not a public address":
+        return "the web address points nowhere"
+    if isinstance(err, requests.Timeout):
+        return "the site did not answer"
+    if isinstance(err, (requests.ConnectionError, socket.error)):
+        return "the site's server refuses connections"
+    return type(err).__name__ if err else "no answer"
+
+
 def is_social_only(url: str, social_domains: list[str]) -> bool:
     h = _host(url)
     if not h:
@@ -148,8 +162,16 @@ def audit_site(url: str, cfg: dict) -> dict:
         except (safeurl.FetchRefused, requests.RequestException, socket.error):
             pass
     if r is None:
+        why = str(err) if isinstance(err, safeurl.FetchRefused) else ""
+        if why in ("page too large", "too many redirects"):
+            # The site answers; we just would not read it. That is not a dead site: leave it ungraded.
+            res["verdict"] = "BLOCKED"
+            res["http_status"] = why
+            res["load_seconds"] = round(time.time() - t0, 2)
+            return res
         res["verdict"] = "BROKEN"
         res["http_status"] = type(err).__name__
+        res["broken_reason"] = _broken_reason(err)
         res["load_seconds"] = round(time.time() - t0, 2)
         return res
 
@@ -233,7 +255,7 @@ def score(biz, cfg: dict) -> None:
         biz.lead_type = "SOCIAL ONLY"
     elif verdict == "BROKEN":
         pts += s.get("dead_site_points", 40)
-        why.append(f"Site listed but does not load ({a.get('http_status')})")
+        why.append(f"Site listed but does not load ({a.get('broken_reason') or a.get('http_status')})")
         biz.lead_type = "BROKEN SITE"
     elif verdict == "UNDER_CONSTRUCTION":
         pts += s.get("under_construction_points", 35)
@@ -241,7 +263,8 @@ def score(biz, cfg: dict) -> None:
         biz.lead_type = "PLACEHOLDER"
     elif verdict == "BLOCKED":
         biz.lead_type = "UNCHECKED"
-        why.append(f"Website refused our check (HTTP {a.get('http_status')}); not graded")
+        st = a.get("http_status")
+        why.append(f"Website refused our check ({'HTTP ' + str(st) if isinstance(st, int) else st}); not graded")
     else:
         biz.lead_type = "WEAK SITE" if verdict == "WEAK" else "HAS GOOD SITE"
         if not a.get("https"):

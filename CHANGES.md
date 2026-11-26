@@ -1,5 +1,11 @@
 # Changes: lead pipeline upgrade (leads-agent)
 
+## 2026-11-26: fixes from the first India run
+- Overture leads are relabelled when the name plainly says another chosen type (a family dental clinic found
+  under dermatology becomes a dental lead). They are still never dropped.
+- `g.co` Google short links count as no website (never fetched), like maps.app.goo.gl.
+- Pristyn Care added to the Indian chains.
+
 ## 2026-11-26: India (the owner's own market), Gurgaon first
 - `config-in.yaml`: country IN, 9 Gurgaon areas marked `priority: true` then 14 Delhi NCR areas, 6 km radius,
   11 business types with exact Overture categories, Indian directory sites (Justdial, Practo, Sulekha...) count as no website.

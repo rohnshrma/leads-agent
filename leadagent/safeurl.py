@@ -28,7 +28,7 @@ MAX_REDIRECTS = 3
 # Never fetched automatically. Suffix match on the host, so m.facebook.com and www.instagram.com are covered.
 NEVER_FETCH = (
     "facebook.com", "fb.com", "instagram.com", "linkedin.com", "tiktok.com", "twitter.com", "x.com",
-    "yelp.com", "yelp.ca", "google.com", "google.ca", "goo.gl", "g.page", "maps.app.goo.gl",
+    "yelp.com", "yelp.ca", "google.com", "google.ca", "goo.gl", "g.co", "g.page", "maps.app.goo.gl",
     "youtube.com", "pinterest.com", "linktr.ee", "tripadvisor.com", "tripadvisor.ca", "nextdoor.com",
     "yellowpages.ca", "yellowpages.com", "canada411.ca", "411.ca", "foursquare.com", "bbb.org",
     "ratemds.com", "healthgrades.com", "zocdoc.com", "wellca.com", "opencare.com",
