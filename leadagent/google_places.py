@@ -30,12 +30,15 @@ FIELD_MASK = (
     "places.businessStatus,places.nationalPhoneNumber,places.internationalPhoneNumber,"
     "places.websiteUri,places.googleMapsUri,nextPageToken"
 )
+COUNTRY_NAMES = {"CA": "Canada", "IN": "India", "US": "USA"}
 MAX_PAGES = 3          # 20 results a page, 60 in all
 PAGE_SIZE = 20
 
 
 class GoogleDiscovery:
-    def __init__(self, api_key: str, budget: Budget, post=None, max_pages: int = MAX_PAGES, radius_km: float = 25.0):
+    def __init__(self, api_key: str, budget: Budget, post=None, max_pages: int = MAX_PAGES, radius_km: float = 25.0,
+                 country: str = "CA"):
+        self.country = (country or "CA").upper()
         self.api_key = (api_key or "").strip()
         self.budget = budget
         self._post = post or requests.post
@@ -71,9 +74,9 @@ class GoogleDiscovery:
                 self._stop(f"call budget reached ({self.budget.refused_reason or 'cap'})")
                 break
             body = {
-                "textQuery": f"{niche} in {city['name']}, Canada",
+                "textQuery": f"{niche} in {city['name']}, {COUNTRY_NAMES.get(self.country, self.country)}",
                 "pageSize": PAGE_SIZE,
-                "regionCode": "CA",
+                "regionCode": self.country,
                 "includePureServiceAreaBusinesses": True,
             }
             # A hard boundary (results outside it are never returned), on every page: Google rejects a

@@ -1,0 +1,340 @@
+# ============================================================
+#  India Lead Agent - configuration (run with --config config-in.yaml)
+#  The owner's own market: the sales partner never sees these leads.
+#  Same engine as config-ca.yaml; only the market, areas, business types and sender differ.
+# ============================================================
+
+source: "overture"
+
+# Google Places (inside the shared call budget kept by the CRM backend), then Overture Maps.
+# Google data is used in memory only; the CRM stores just the place_id (see docs/COMPLIANCE.md).
+discovery: ["google", "overture"]
+
+overpass:
+  pause_seconds: 2.0
+  # Indian cities are dense: a 6 km circle around each area keeps the Gurgaon areas below from
+  # returning the same businesses. A fetch started from the CRM with an area can still set 1-50 km.
+  radius_km: 6.0
+  tile_km: 25.0
+  mirrors:
+    - https://overpass-api.de/api/interpreter
+
+overture:
+  max_places: 100
+  cache_dir: cache/overture
+
+overture_release: "latest"
+
+# Each business type is matched on Overture's own category (exact). Taken from the 2026-11-18 release
+# around Pune (counts there in brackets, as a guide to how much each type yields).
+overture_categories:
+  "dental clinic": [dental_clinic, general_dentistry, cosmetic_dentistry, pediatric_dentistry,
+                    endodontics, periodontics, prosthodontics]                    # ~1,200
+  "orthodontist": [orthodontics]                                                  # 41
+  "skin and hair clinic": [dermatology, hair_replacement, hair_loss_center, laser_hair_removal,
+                           medical_spa]                                           # ~310
+  "coaching institute": [tutoring_service, test_preparation, computer_coaching, language_school,
+                         private_tutor, civil_examinations_academy]               # ~1,600
+  "interior designer": [interior_design]                                          # 1,130
+  "physiotherapist": [physical_therapy, rehabilitation_center, sports_medicine]   # ~260
+  "eye clinic": [vision_or_eye_care_clinic, optometry, ophthalmology]             # ~185
+  "veterinary clinic": [veterinarian, animal_hospital]                            # ~70
+  "preschool": [preschool, day_care_preschool, child_care_and_day_care]           # ~1,250
+  "gym fitness studio": [gym, fitness_trainer]                                    # ~1,300
+  "real estate agent": [real_estate_agent, real_estate_service]                   # ~4,400
+google_api_key_env: "GOOGLE_MAPS_API_KEY"
+
+# ---- WHERE TO HUNT -----------------------------------------
+# Gurgaon (Gurugram) first, then the rest of Delhi NCR (the owner's own area).
+# Areas marked priority: true get `priority_share` of every run that has no typed area; the rest of
+# NCR shares what is left. Typing an area in the CRM ("Sohna Road", "Noida Sector 62") searches just that.
+country: "IN"
+priority_share: 0.7
+
+cities:
+  # --- Gurgaon (priority) ---
+  - name: "Gurugram, Haryana"
+    aliases: ["Gurgaon", "Gurugram", "Old Gurgaon"]
+    lat: 28.4595
+    lng: 77.0266
+    priority: true
+  - name: "DLF Phase 1-5, Gurugram"
+    aliases: ["DLF", "DLF Gurgaon", "Cyber City", "MG Road Gurgaon"]
+    lat: 28.4800
+    lng: 77.0930
+    priority: true
+  - name: "Golf Course Road, Gurugram"
+    aliases: ["Golf Course Road", "Sector 54 Gurgaon"]
+    lat: 28.4410
+    lng: 77.1000
+    priority: true
+  - name: "Sohna Road, Gurugram"
+    aliases: ["Sohna Road"]
+    lat: 28.4100
+    lng: 77.0420
+    priority: true
+  - name: "Golf Course Extension Road, Gurugram"
+    aliases: ["Golf Course Extension Road", "Sector 65 Gurgaon"]
+    lat: 28.4000
+    lng: 77.0750
+    priority: true
+  - name: "Dwarka Expressway, Gurugram"
+    aliases: ["Dwarka Expressway", "New Gurgaon"]
+    lat: 28.4650
+    lng: 76.9950
+    priority: true
+  - name: "Sector 82-90, New Gurugram"
+    aliases: ["Sector 84 Gurgaon", "New Gurugram"]
+    lat: 28.3950
+    lng: 76.9600
+    priority: true
+  - name: "Palam Vihar, Gurugram"
+    aliases: ["Palam Vihar"]
+    lat: 28.5050
+    lng: 77.0400
+    priority: true
+  - name: "Manesar, Haryana"
+    aliases: ["Manesar", "IMT Manesar"]
+    lat: 28.3540
+    lng: 76.9390
+    priority: true
+  # --- Rest of Delhi NCR ---
+  - name: "South Delhi (Saket), Delhi"
+    aliases: ["South Delhi", "Saket"]
+    lat: 28.5245
+    lng: 77.2066
+  - name: "Dwarka, Delhi"
+    aliases: ["Dwarka"]
+    lat: 28.5921
+    lng: 77.0460
+  - name: "Vasant Kunj, Delhi"
+    aliases: ["Vasant Kunj"]
+    lat: 28.5200
+    lng: 77.1590
+  - name: "West Delhi (Rajouri Garden), Delhi"
+    aliases: ["West Delhi", "Rajouri Garden"]
+    lat: 28.6492
+    lng: 77.1220
+  - name: "Central Delhi (Connaught Place), Delhi"
+    aliases: ["Connaught Place", "Central Delhi"]
+    lat: 28.6315
+    lng: 77.2167
+  - name: "North Delhi (Pitampura), Delhi"
+    aliases: ["North Delhi", "Pitampura"]
+    lat: 28.6980
+    lng: 77.1380
+  - name: "East Delhi (Laxmi Nagar), Delhi"
+    aliases: ["East Delhi", "Laxmi Nagar"]
+    lat: 28.6304
+    lng: 77.2777
+  - name: "Lajpat Nagar, Delhi"
+    aliases: ["Lajpat Nagar"]
+    lat: 28.5677
+    lng: 77.2433
+  - name: "Noida Sector 18, Uttar Pradesh"
+    aliases: ["Noida", "Noida Sector 18"]
+    lat: 28.5708
+    lng: 77.3260
+  - name: "Noida Sector 62, Uttar Pradesh"
+    aliases: ["Noida Sector 62"]
+    lat: 28.6270
+    lng: 77.3720
+  - name: "Noida Sector 137 (Expressway), Uttar Pradesh"
+    aliases: ["Noida Expressway", "Noida Sector 137"]
+    lat: 28.5100
+    lng: 77.4000
+  - name: "Greater Noida, Uttar Pradesh"
+    aliases: ["Greater Noida"]
+    lat: 28.4744
+    lng: 77.5040
+  - name: "Indirapuram, Ghaziabad"
+    aliases: ["Indirapuram", "Ghaziabad"]
+    lat: 28.6460
+    lng: 77.3690
+  - name: "Faridabad, Haryana"
+    aliases: ["Faridabad"]
+    lat: 28.4089
+    lng: 77.3178
+
+# ---- WHAT TO HUNT ------------------------------------------
+# Chosen (Nov 2026) for money to spend, an owner who answers the phone, and room to upsell
+# (Google Ads, Google profile care, WhatsApp booking, SEO). Keep in step with IN_NICHES in the CRM
+# (backend src/config/fetchOptions.ts).
+niches:
+  - "dental clinic"
+  - "orthodontist"
+  - "skin and hair clinic"
+  - "coaching institute"
+  - "interior designer"
+  - "physiotherapist"
+  - "eye clinic"
+  - "veterinary clinic"
+  - "preschool"
+  - "gym fitness studio"
+  - "real estate agent"
+
+# ---- HOW MUCH PER RUN --------------------------------------
+queries_per_run: 45   # ~28 min; 24 areas x 11 business types = 264 searches to rotate through
+max_places_per_query: 100
+
+# ---- WEBSITE AUDIT -----------------------------------------
+website_audit:
+  enabled: true
+  timeout_seconds: 12
+  # Treat these as "NO REAL WEBSITE" even though a URL exists.
+  # This is the single biggest source of hidden leads.
+  social_only_domains:
+    - facebook.com
+    - m.facebook.com
+    - instagram.com
+    - linktr.ee
+    - yelp.com
+    - nextdoor.com
+    - tripadvisor.com
+    - doordash.com
+    - toasttab.com
+    - booksy.com
+    - vagaro.com
+    - square.site
+    - business.site          # Google's retired site builder
+    - sites.google.com
+    - godaddysites.com
+    - wixsite.com            # unconfigured free Wix subdomain
+    - weebly.com
+    - blogspot.com
+    - wordpress.com
+    # Indian directory and marketplace profiles: a listing there is not the business's own website
+    - justdial.com
+    - sulekha.com
+    - indiamart.com
+    - practo.com
+    - lybrate.com
+    - magicbricks.com
+    - 99acres.com
+    - housing.com
+    - urbancompany.com
+    - wa.me
+    - business.google.com
+    - g.page
+
+# ---- QUALITY FILTERS (free, no key) ------------------------
+# The free map data lists chains, records nobody can phone, and businesses whose website is simply
+# missing from the map. These run before any website is audited.
+quality_filters:
+  enabled: true
+  skip_chains: true              # known chains and franchises, Overture brands (big brand or 3+ places), one name or one website at 3+ places
+  chain_min_locations: 3
+  skip_branded: true             # skip anything OpenStreetMap tags with a brand
+  chain_names: []                # add your own, e.g. ["Smiles Dental Group"]
+  # Records with no phone are KEPT and marked phone_status = "missing" (they are no longer dropped).
+  infer_website_from_email: true # info@theirclinic.ca means theirclinic.ca exists: audit it instead
+  free_email_domains: []         # extra mailbox providers to ignore
+
+# ---- GOOGLE CHECK (optional - OFF) -------------------------
+# Looks up the best candidates on Google Places to drop closed businesses, catch websites the map
+# lacks, and use reviews as a demand signal. Runs ONLY when enabled: true AND the key in the env var
+# named by google_api_key_env is set. Needs a Google Cloud billing account.
+# Text Search with phone/website/rating is the "Enterprise" SKU: first 1,000 requests a month free,
+# then $35 per 1,000. monthly_call_cap is counted in the ledger and never exceeded; ALSO set a daily
+# quota in the Google Cloud console, which is the cap Google itself enforces.
+google_verify:
+  enabled: true
+  max_per_run: 15                # lookups per run, taken from the SAME backend budget as discovery
+  min_name_similarity: 0.6
+  max_distance_m: 400
+  no_match_penalty: 20           # score taken off when Google has no matching listing
+  # Google's terms allow keeping a place_id and nothing else, so nothing else is ever kept.
+
+# ---- SCORING ------------------------------------------------
+# Higher opportunity_score = better lead for you.
+scoring:
+  # Website problems
+  no_website_points: 55
+  social_only_points: 45
+  dead_site_points: 40
+  under_construction_points: 35
+  no_https_points: 12
+  not_mobile_friendly_points: 14
+  slow_load_points: 8            # > 4s
+  very_slow_load_points: 6       # extra if > 8s
+  stale_copyright_points: 8      # copyright year 2+ years old
+  no_meta_description_points: 5
+  no_title_points: 5
+
+  # Credibility on FREE sources (no reviews exist)
+  has_phone_points: 14
+  no_phone_penalty: 25           # unreachable = not a lead
+  has_email_points: 6
+  multi_source_points: 8         # several datasets agreed it exists
+  high_confidence_points: 8      # Overture confidence >= 0.8
+  low_confidence_penalty: 12     # Overture confidence < 0.55
+
+  # Credibility on Google only (used if you ever enable billing)
+  min_reviews_to_qualify: 5
+  reviews_bonus_tiers:
+    - [200, 15]
+    - [75, 12]
+    - [25, 8]
+    - [5, 4]
+  thin_reviews_penalty: 18
+  good_rating_bonus: 6
+
+  # Can this category afford a $1,500 website?
+  category_value_tiers:
+    High-value profession:
+      points: 12
+      match: ["dentist", "dental", "orthodont", "aesthetic", "cosmetic", "laser",
+              "dermatolog", "skin", "hair", "interior", "coaching", "tutor",
+              "test_prep", "real_estate", "real estate"]
+    Solid local business:
+      points: 6
+      match: ["physiotherap", "physical_therapy", "optometr", "eye", "vision",
+              "veterinar", "preschool", "day_care", "gym", "fitness", "clinic"]
+    Thin margins:
+      points: -8
+      match: ["hairdresser", "nail", "cafe", "bakery", "florist", "tattoo",
+              "laundry", "dry_cleaning"]
+
+# Only report leads at or above this score.
+min_score_to_report: 40
+
+# ---- WHAT EACH RUN DELIVERS ----------------------------------
+# A business with a good website is never reported (nothing to sell them). Each run stops searching
+# once it has these, best scores first:
+#   no_website  - no site at all, or only a Facebook/Instagram page   -> sell a website
+#   bad_website - broken, placeholder, or weak (not secure, not mobile-friendly, slow, outdated,
+#                 missing SEO basics)                                 -> sell a rebuild, SEO, CRM
+# Set a number to 0 to have no limit for that kind.
+lead_mix:
+  no_website: 12
+  bad_website: 12
+  max_broken_share: 0.5   # at most half the bad-website leads may be broken sites; the rest are weak sites
+                          # (if there are not enough weak sites, broken ones fill the gap)
+
+# ---- OUTREACH ----------------------------------------------
+outreach:
+  your_name: "Rohan"
+  your_company: "WebiGeeks Digital"
+  your_email: "rohan@webigeeksdigital.com"
+  your_phone: ""
+  # CAN-SPAM requires a real postal address in every commercial email.
+  your_postal_address: "Sector 14, Old DLF Colony, Gurugram, Haryana 122001, India"
+  calendar_link: ""
+  best_call_windows_local: ["11:00-13:00", "16:00-18:00"]   # IST, Monday to Saturday
+
+# ---- WEBSITE MOCKUPS ---------------------------------------
+# One free sample homepage per lead in the six niches (dental, driving
+# school, auto repair, gym, law, accounting). Static files in out/mockups.
+# base_url is where that folder is published (Cloudflare Pages, custom
+# domain). Each page lives at base_url/<business-name>-<random>/.
+mockups:
+  enabled: false   # the CRM builds mockups on demand
+  dir: "mockups"
+  base_url: "https://demo.webigeeksdigital.com"
+
+# ---- OUTPUT -------------------------------------------------
+output:
+  dir: "out"
+  keep_days: 30
+  write_csv: true
+  write_html: false   # the run log and artifacts are public: no lead data is written for display
