@@ -14,6 +14,8 @@
 #
 # Setup: see docs/COST_SAFETY.md.
 name: Lead run (Canada, India and US)
+# The CRM run id in the name lets the CRM's Stop button cancel exactly this run (it is not secret: inputs are public).
+run-name: "Lead run ${{ inputs.market || 'scheduled' }} ${{ inputs.crm_run_id }}"
 
 on:
   schedule:
