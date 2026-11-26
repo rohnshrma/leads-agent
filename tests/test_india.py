@@ -125,3 +125,28 @@ def g(name, niche, types=""):
 ])
 def test_indian_business_types_by_name(name, niche, types, want):
     assert categorize.decide(g(name, niche, types), BACKEND_IN_NICHES) == want
+
+
+def test_pristyn_care_branches_are_a_chain():
+    b = Business(source="overture", source_id="1", name="Pristyn Care Sector 14 Clinic")
+    assert quality.chain_reason(b, list(quality.DEFAULT_CHAIN_NAMES), set(), False)
+
+
+def test_a_google_short_link_is_not_a_website():
+    from leadagent import safeurl
+    assert safeurl.is_never_fetch("https://g.co/kgs/AbC123")
+
+
+def test_overture_lead_relabelled_when_the_name_says_another_type():
+    cfg = {"niches": BACKEND_IN_NICHES}
+    dental = Business(source="overture", source_id="1", name="Example Family Dental",
+                      niche_query="skin and hair clinic")
+    skin = Business(source="overture", source_id="2", name="Example Skin & Hair Clinic",
+                    niche_query="skin and hair clinic")
+    plain = Business(source="overture", source_id="3", name="Example Corporate Events",
+                     niche_query="skin and hair clinic")
+    out, rep = categorize.apply([dental, skin, plain], cfg)
+    assert [b.niche_query for b in out] == ["dental clinic", "skin and hair clinic", "skin and hair clinic"]
+    out, _ = categorize.apply([plain], {**cfg, "drop_other_trades": True})   # the India setting
+    assert out == []
+    assert rep["relabelled"] == 1

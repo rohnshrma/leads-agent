@@ -49,6 +49,9 @@ google_api_key_env: "GOOGLE_MAPS_API_KEY"
 # Areas marked priority: true get `priority_share` of every run that has no typed area; the rest of
 # NCR shares what is left. Typing an area in the CRM ("Sohna Road", "Noida Sector 62") searches just that.
 country: "IN"
+# Drop an Overture result whose name plainly says another trade ("... Events", "... Travels", "... Caterers")
+# even though Overture filed it under one of our categories (leadagent/categorize.py OTHER_TRADE).
+drop_other_trades: true
 priority_share: 0.7
 
 cities:
@@ -216,6 +219,8 @@ website_audit:
     - wa.me
     - business.google.com
     - g.page
+    - g.co
+    - maps.app.goo.gl
 
 # ---- QUALITY FILTERS (free, no key) ------------------------
 # The free map data lists chains, records nobody can phone, and businesses whose website is simply
@@ -308,6 +313,7 @@ min_score_to_report: 40
 lead_mix:
   no_website: 12
   bad_website: 12
+  max_per_search: 6       # at most 6 leads from one type + area search, so a run mixes types and areas
   max_broken_share: 0.5   # at most half the bad-website leads may be broken sites; the rest are weak sites
                           # (if there are not enough weak sites, broken ones fill the gap)
 

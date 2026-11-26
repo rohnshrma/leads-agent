@@ -4,7 +4,8 @@ Merge the same business found by different sources, in memory, before anything i
 Two records are the same business when, checked in this order, any of these agree:
   1. place_id        (Google place id)
   2. normalised phone (last ten digits)
-  3. website domain  (www. stripped; social networks and website builders never count)
+  3. website domain  (www. stripped; social networks and website builders never count), or the
+     business's own email domain (never a mailbox provider such as gmail.com)
   4. normalised name AND within 75 m of each other
 
 Guards, so that two different businesses are not fused:
@@ -23,6 +24,7 @@ import math
 import re
 
 from . import phones
+from .quality import own_domain
 from .safeurl import NEVER_FETCH, host_of
 
 NAME_MATCH_M = 75.0
@@ -111,6 +113,11 @@ def merge(businesses: list) -> tuple[list, dict]:
         link(by_srcid, f"{b.source}:{b.source_id}" if b.source_id else "", i, "by_place_id", False)  # same record found twice
         link(by_phone, phones.last10(b.phone), i, "by_phone", True)
         link(by_dom, domain_of(b.website), i, "by_domain", True)
+        # The business's own email domain is the same evidence as its website (one record may list only
+        # the email: "Example Derma" with info@skinclinic.example next to "Dr. ... Clinic" with skinclinic.example).
+        mail_dom = own_domain(b.email)
+        if mail_dom and mail_dom != domain_of(b.website):
+            link(by_dom, domain_of("https://" + mail_dom), i, "by_domain", True)
         key = norm_name(b.name)
         if key:
             for j in by_name.get(key, []):
